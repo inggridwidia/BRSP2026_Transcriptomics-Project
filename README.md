@@ -12,7 +12,7 @@ Kumpulan proyek analisis bioinformatika yang dikerjakan selama mengikuti **Bioin
 ## 📂 Struktur Repositori
 Repositori ini terdiri dari tiga modul utama yang mencakup alur kerja bioinformatika dari akuisisi data hingga interpretasi jalur fungsional:
 
-1. [01-GEO2R-Intestinal-RYGB]((https://github.com/inggridwidia/BRSP2026_Transcriptomics-Project/tree/main/01-GEO2R-Intestinal-RYGB))
+1. [01-GEO2R-Intestinal-RYGB](https://github.com/inggridwidia/BRSP2026_Transcriptomics-Project/tree/main/01-GEO2R-Intestinal-RYGB)
 
 Analisis awal menggunakan tool GEO2R untuk mengeksplorasi perubahan transkriptomik pada jaringan intestinal pasca operasi Roux-en-Y Gastric Bypass (RYGB).
 
