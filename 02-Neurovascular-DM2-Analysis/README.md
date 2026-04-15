@@ -74,6 +74,7 @@ gene_ann <- AnnotationDbi::select(
 
 ### 2.5 _Data Visualization (Volcano Plot, Venn Diagram, & Heatmap)_
 Visualisasi dilakukan untuk memvalidasi distribusi gen dan melihat pola pengelompokan sampel secara global maupun spesifik.
+
 ***1. Volcano Plot***
 ```R
 # Volcano Plot: Endotel (Threshold: P < 0.05 & |logFC| > 0.5)
