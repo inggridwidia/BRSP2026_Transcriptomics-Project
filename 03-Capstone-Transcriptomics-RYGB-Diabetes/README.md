@@ -10,7 +10,7 @@ Analisis dilakukan secara sistematis menggunakan bahasa pemrograman R dengan tah
 ### 2.1. _Preprocessing data_ 
 Normalisasi data microarray dan transformasi Log2.
 
-```bash
+```R
 # Data Acquisition and Normalization
 gset <- getGEO("GSE281144", GSEMatrix = TRUE)[[1]]
 ex <- exprs(gset)
@@ -21,7 +21,7 @@ ex <- log2(ex) # Log2 transformation for normal distribution
 ### 2.2. _Differential Analysis_
 Identifikasi DEG menggunakan model linier (`limma`) dengan kriteria Adjusted P-Value < 0.05 untuk membandingkan kelompok Post-Op terhadap Pre-Op.
 
-```bash
+```R
 # Statistical Modeling with limma
 design <- model.matrix(~0 + gset$group)
 fit <- lmFit(ex, design)
@@ -33,17 +33,90 @@ fit2 <- eBayes(fit2) # Empirical Bayes moderation
 topTableResults <- topTable(fit2, adjust = "fdr", number = Inf, p.value = 0.05)
 ```
 
-### 2.3. _Enrichment Analysis_ 
+### 2.3. Genes Annotation
+Pemetaan Probe ID ke Gene Symbol menggunakan simbol gen resmi yang disertakan langsung oleh GEO
+
+```R
+# Mengambil metadata fitur (gen) langsung dari objek gset
+feature_data <- fData(gset)
+extracted_symbols <- sub("^[^//]* // ([^//]*) // .*$", "\\1", feature_data$gene_assignment)
+extracted_names <- sub("^[^//]* // [^//]* // ([^//]*) // .*$", "\\1", feature_data$gene_assignment)
+
+# Mapping probe
+anno_map <- data.frame(
+  PROBEID = feature_data$ID,
+  SYMBOL = extracted_symbols,
+  GENENAME = extracted_names,
+  stringsAsFactors = FALSE
+)
+
+# Gabungkan ke hasil statistik topTable
+topTableResults <- merge(topTableResults, anno_map, by = "PROBEID", all.x = TRUE)
+topTableResults$SYMBOL[topTableResults$SYMBOL == "---"] <- NA
+topTableResults$GENENAME[topTableResults$GENENAME == "---"] <- NA
+head(topTableResults[, c("PROBEID", "SYMBOL", "GENENAME")])
+```
+
+### 2.4. _Data Visualization (Volcano Plot & Heatmap)_
+Visualisasi dilakukan untuk memvalidasi distribusi gen secara global dan melihat pola pengelompokan ekspresi gen antar kondisi klinis (Pre-Op vs Post-Op).
+**1. _Volcano Plot_**
+```R
+# Data Preparation (Dataset GSE281144)
+volcano_data <- data.frame(
+  logFC = topTableResults$logFC,
+  adj.P.Val = topTableResults$adj.P.Val,
+  Gene = topTableResults$SYMBOL
+)
+
+# Klasifikasi Status Ekspresi (Threshold: |logFC| > 1 & adj.P.Val < 0.05)
+volcano_data$status <- "NO"
+volcano_data$status[volcano_data$logFC > 1 & volcano_data$adj.P.Val < 0.05] <- "UP"
+volcano_data$status[volcano_data$logFC < -1 & volcano_data$adj.P.Val < 0.05] <- "DOWN"
+
+# Visualisasi menggunakan ggplot2
+ggplot(volcano_data, aes(x = logFC, y = -log10(adj.P.Val), color = status)) +
+  geom_point(alpha = 0.4) +
+  scale_color_manual(values = c("DOWN" = "blue", "NO" = "grey", "UP" = "red")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.01), linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Differential Gene Expression: Post-Op vs Pre-Op", 
+       subtitle = "Dataset GSE281144 - Gastric Bypass Adaptation")
+```
+**2. _Heatmap (Top 50 DEGs)_**
+```R
+# Seleksi 50 gen paling signifikan (Top 50 DEGs)
+topTableAnnotated <- subset(topTableResults, !is.na(SYMBOL) & SYMBOL != "" & SYMBOL != "---")
+topTableAnnotated <- topTableAnnotated[order(topTableAnnotated$adj.P.Val), ]
+top50 <- head(topTableAnnotated, 50)
+
+# Matriks ekspresi dengan label Gene Symbol
+mat_heatmap <- ex[top50$PROBEID, ]
+rownames(mat_heatmap) <- top50$SYMBOL
+
+# Visualisasi Heatmap dengan Klastering Hierarkis
+pheatmap(
+  mat_heatmap,
+  scale = "row",                
+  annotation_col = data.frame(Group = gset$group, row.names = colnames(mat_heatmap)),
+  show_colnames = FALSE,       
+  show_rownames = TRUE,
+  fontsize_row = 7,
+  clustering_method = "complete",
+  main = "Heatmap: Top 50 Identified Genes (Diabetic Post-Op vs Pre-Op)"
+)
+```
+
+### 2.5. _Enrichment Analysis_ 
 Interpretasi biologis menggunakan database _Gene Ontology_ (GO) dan _Kyoto Encyclopedia of Genes and Genomes_ (KEGG) untuk memetakan perubahan jalur fungsional.
 
-```bash
+```R
 # GO Enrichment (Biological Process)
+go_up <- enrichGO(gene = up_entrez$ENTREZID, OrgDb = org.Hs.eg.db, ont = "BP")
 go_down <- enrichGO(gene = down_entrez$ENTREZID, OrgDb = org.Hs.eg.db, ont = "BP")
 
-# KEGG Pathway Mapping
+# KEGG Pathway Mapping and Visualization
 kegg_enrich <- enrichKEGG(gene = all_entrez_df$ENTREZID, organism = 'hsa')
-
-# Visualizing pathways with Pathview
 pathview(gene.data = kegg_logFC, pathway.id = "hsa04151", species = "hsa")
 ```
 
