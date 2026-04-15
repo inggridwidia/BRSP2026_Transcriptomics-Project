@@ -74,34 +74,61 @@ gene_ann <- AnnotationDbi::select(
 
 ### 2.5 _Data Visualization (Volcano Plot, Venn Diagram, & Heatmap)_
 Visualisasi dilakukan untuk memvalidasi distribusi gen dan melihat pola pengelompokan sampel secara global maupun spesifik.
-
+***1. Volcano Plot***
 ```R
-# Volcano Plot: Diabetic vs Normal (Threshold: P < 0.05 & |logFC| > 0.5)
+# Volcano Plot: Endotel (Threshold: P < 0.05 & |logFC| > 0.5)
+res_endotel$status <- "NO"
+res_endotel$status[res_endotel$logFC > 0.5 & res_endotel$P.Value < 0.05] <- "UP"
+res_endotel$status[res_endotel$logFC < -0.5 & res_endotel$P.Value < 0.05] <- "DOWN"
 ggplot(res_endotel, aes(x = logFC, y = -log10(P.Value), color = status)) +
   geom_point(alpha = 0.4, size = 1.5) +
   scale_color_manual(values = c("DOWN" = "blue", "NO" = "grey", "UP" = "red")) +
   theme_minimal() + labs(title = "Volcano Plot: Endothelial Cells"
 )
+
+# Volcano Plot: Neuron (Threshold: P < 0.05 & |logFC| > 0.5)
+res_neuron$status <- "NO"
+res_neuron$status[res_neuron$logFC > 0.5 & res_neuron$P.Value < 0.05] <- "UP"
+res_neuron$status[res_neuron$logFC < -0.5 & res_neuron$P.Value < 0.05] <- "DOWN"
 ggplot(res_neuron, aes(x = logFC, y = -log10(P.Value), color = status)) +
   geom_point(alpha = 0.4, size = 1.5) +
   scale_color_manual(values = c("DOWN" = "blue", "NO" = "grey", "UP" = "red")) +
   theme_minimal() + labs(title = "Volcano Plot: Neuronal Cells"
 )
-
+```
+***2. Venn Diagram***
+```R
 # Venn Diagram: Membandingkan irisan DEGs antar tipe sel
 draw.pairwise.venn(
   area1 = nrow(res_endotel_sig),
   area2 = nrow(res_neuron_sig),
   cross.area = length(common_genes),
-  category = c("Endotel", "Neuron"), fill = c("skyblue", "pink")
+  category = c("Endotel", "Neuron"),
+  fill = c("skyblue", "pink")
+)
+```
+***3. Heatmap***
+```R
+# Heatmap untuk Common DEGs
+common_genes <- intersect(
+  res_endotel$Gene.symbol[res_endotel$P.Value < 0.05 & abs(res_endotel$logFC) > 0.5],
+  res_neuron$Gene.symbol[res_neuron$P.Value < 0.05 & abs(res_neuron$logFC) > 0.5]
 )
 
-# Heatmap untuk Common DEGs
-pheatmap(mat_heatmap, 
-         scale = "row", 
-         clustering_method = "ward.D2", 
-         annotation_col = data.frame(Group = gset_filtered$group),
-         color = colorRampPalette(c("blue", "white", "red"))(100))
+# Matriks ekspresi
+common_genes <- common_genes[common_genes != "" & !is.na(common_genes)]
+mat_heatmap <- ex_filtered[rownames(res_endotel[res_endotel$Gene.symbol %in% common_genes, ]), ]
+rownames(mat_heatmap) <- res_endotel$Gene.symbol[res_endotel$Gene.symbol %in% common_genes]
+mat_heatmap <- mat_heatmap[!duplicated(rownames(mat_heatmap)), ] # Unique Gene Representation
+
+# Visualisasi heatmap
+pheatmap(
+  mat_heatmap, 
+  scale = "row", 
+  clustering_method = "ward.D2", 
+  annotation_col = data.frame(Group = gset_filtered$group),
+  color = colorRampPalette(c("blue", "white", "red"))(100)
+)
 ```
 
 ### 2.6. _Enrichment Analysis_ 
