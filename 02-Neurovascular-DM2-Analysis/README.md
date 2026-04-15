@@ -122,7 +122,7 @@ Skrip R lengkap yang digunakan untuk analisis ini (termasuk pemrosesan `limma`, 
 # 3. Hasil dan Pembahasan
 ### 3.1. Identifikasi _Common DEGs_
 
-Analisis integratif menggunakan diagram Venn berhasil mengidentifikasi 94 gen yang beririsan (_common DEGs_) yang signifikan secara simultan pada sel endotel dan sel neuron.
+Analisis integratif menggunakan diagram Venn berhasil mengidentifikasi 77 gen yang beririsan (_common DEGs_) yang signifikan secara simultan pada sel endotel dan sel neuron.
 
 ![Venn_Diagram.png](plot-result/Venn_Diagram.png)
 
@@ -130,13 +130,13 @@ Gambar 1. Diagram Venn menunjukkan irisan gen yang signifikan di kedua jenis sel
 
 ![Heatmap.png](plot-result/Heatmap.png)
 
-Gambar 2. Heatmap 94 gen utama menunjukkan pemisahan sempurna antara klaster Normal dan klaster Diabetes
+Gambar 2. Heatmap 77 gen utama menunjukkan pemisahan sempurna antara klaster Normal dan klaster Diabetes
 
 ### 3.2. Analisis Jalur Fungsional (GO & KEGG)
 
 ![GO_Analysis.png](plot-result/GO_Analysis.png)
 
-Gambar 3. Analisis _Gene Ontology_ (GO) pada 94 common DEGs menunjukkan gangguan pada proses biologis krusial, terutama positive regulation of cell-cell adhesion dan cell-matrix adhesion.
+Gambar 3. Analisis _Gene Ontology_ (GO) pada 77 common DEGs menunjukkan gangguan pada proses biologis krusial, terutama positive regulation of cell-cell adhesion dan cell-matrix adhesion.
 
 ![KEGG_Enrich.png](plot-result/KEGG_Enrich.png)
 
