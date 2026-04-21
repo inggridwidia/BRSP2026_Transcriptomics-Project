@@ -1,15 +1,15 @@
-# Profil Ekspresi Gen Unit Neurovaskular pada Diabetes Melitus Tipe 2
+# Gene Expression Profiling of the Neurovascular Unit in Type 2 Diabetes Mellitus
 
 
-# 1. Pendahuluan
-Diabetes Melitus Tipe 2 (T2DM) merupakan faktor risiko utama bagi penyakit neurodegeneratif, termasuk demensia dan Alzheimer. Kerusakan ini diduga berakar pada resistensi insulin perifer yang memicu kegagalan pada unit neurovaskular otak. Proyek ini bertujuan untuk memetakan perubahan ekspresi gen secara sinkron pada sel neuron kortikal dan sel endotel untuk mengidentifikasi mekanisme kerusakan bersama (common pathways) akibat paparan hiperglikemia kronis.
+# 1. Introduction
+Type 2 Diabetes Mellitus (T2DM) is a major risk factor for neurodegenerative diseases, including dementia and Alzheimer’s disease. This damage is thought to arise from peripheral insulin resistance, which contributes to dysfunction within the brain’s neurovascular unit. This project aims to characterize synchronous gene expression changes in cortical neurons and endothelial cells to identify shared mechanisms of damage associated with chronic hyperglycemia.
 
-# 2. Metode
-Analisis ini menggunakan dataset publik GSE161355 yang diperoleh dari database NCBI _Gene Expression Omnibus_ (GEO), menggunakan platform _Microarray Affymetrix Human Genome U133 Plus 2.0 Array_.
+# 2. Methods
+This analysis is based on the publicly available dataset GSE161355 retrieved from the NCBI Gene Expression Omnibus (GEO), utilizing the Affymetrix Human Genome U133 Plus 2.0 Array platform. 
 
-Analisis dilakukan secara sistematis menggunakan bahasa pemrograman R dengan tahapan utama:
-### 2.1. _Preprocessing data_ 
-Normalisasi data microarray dan transformasi Log2.
+The analysis was conducted in R following a systematic workflow comprising these primary stages:
+### 2.1. Data Preprocessing 
+Microarray data normalization and Log2 transformation.
 
 ```R
 # Data Acquisition and Normalization
@@ -19,25 +19,25 @@ ex[ex <= 0] <- NA
 ex <- log2(ex) # Log2 transformation for normal distribution
 ```
 
-### 2.2. Filtering Sampel Berdasarkan Tipe Sel
-Dataset GSE161355 mengandung berbagai tipe sel (Endotel, Neuron, dan Astrosit). Pemfilteran dilakukan untuk mengisolasi populasi sel endotel dan neuron agar perbandingan Diabetic vs Control akurat.
+### 2.2. Sample Filtering by Cell Type
+The GSE161355 dataset contains various cell types (endothelial cells, neurons, and astrocytes). Filtering was performed to retain endothelial and neuronal populations, enabling a focused comparison between diabetic and control conditions.
 
 ```R
-# Memilih kelompok spesifik (fokus pada Endotel dan Neuron)
-grup_fokus <- c(
+# Selecting specific groups (Focusing on Endothelial and Neuronal cells)
+grup_focus <- c(
     "Control.Endothelial.cells", 
     "Diabetic.Endothelial.cells", 
     "Control.Neurones", 
     "Diabetic.Neurones"
 )
 
-# Filter ExpressionSet dan reset level faktor
+# Filter ExpressionSet and reset factor levels
 gset_filtered <- gset[, gset$group %in% grup_fokus]
-gset_filtered$group <- factor(gset_filtered$group, levels = grup_fokus)
+gset_filtered$group <- factor(gset_filtered$group, levels = grup_focus)
 ```
 
-### 2.3. _Differential Expression Analysis_ (`limma`)
-Identifikasi DEG menggunakan model linier (`limma`). Mengingat jumlah sampel yang terbatas (n=6), ambang batas signifikansi ditetapkan pada Raw P-Value < 0.05 untuk meminimalkan risiko false negatives dalam eksplorasi jalur biologis.
+### 2.3. Differential Expression Analysis (`limma`)
+Differentially expressed genes (DEGs) were identified using linear modeling implemented in the `limma` package. Given the limited sample size (n = 6), a significance threshold of raw p-value < 0.05 was applied as an exploratory cutoff to increase sensitivity for pathway discovery, while acknowledging the potential for an elevated false-positive rate.
 
 ```R
 # Statistical Modeling with limma
@@ -50,17 +50,17 @@ contrast_matrix <- makeContrasts(
 )
 fit2 <- eBayes(contrasts.fit(fit, contrast_matrix))
 
-# Mengambil hasil akhir untuk masing-masing tipe sel
+# Extracting final results for each cell type
 res_endotel <- topTable(fit2, coef="Diabetes_Efek_Endotel", adjust="fdr", number=Inf)
 res_neuron <- topTable(fit2, coef="Diabetes_Efek_Neuron", adjust="fdr", number=Inf)
 
-# Filter menggunakan Raw P-Value < 0.05 (Threshold Eksploratif)
+# Filtering using Raw P-Value < 0.05 (Exploratory Threshold)
 res_endotel_sig <- res_endotel[res_endotel$P.Value < 0.05, ]
 res_neuron_sig <- res_neuron[res_neuron$P.Value < 0.05, ]
 ```
 
 ### 2.4. _Genes Annotation_
-Pemetaan Probe ID ke Gene Symbol menggunakan database hgu133plus2.db (Affymetrix Human Genome U133 Plus 2.0 Array) untuk interpretasi data yang lebih mudah.
+Probe IDs were mapped to gene symbols using the `hgu133plus2.db` database to facilitate biological interpretation.
 
 ```R
 # Gene Mapping and Annotation
@@ -72,8 +72,8 @@ gene_ann <- AnnotationDbi::select(
 )
 ```
 
-### 2.5 _Data Visualization (Volcano Plot, Venn Diagram, & Heatmap)_
-Visualisasi dilakukan untuk memvalidasi distribusi gen dan melihat pola pengelompokan sampel secara global maupun spesifik.
+### 2.5. Data Visualization (Volcano Plot, Venn Diagram, & Heatmap)
+Data visualization was performed to assess the distribution of gene expression values and to evaluate global and sample-level clustering patterns.
 
 ***1. Volcano Plot***
 ```R
@@ -99,7 +99,7 @@ ggplot(res_neuron, aes(x = logFC, y = -log10(P.Value), color = status)) +
 ```
 ***2. Venn Diagram***
 ```R
-# Venn Diagram: Membandingkan irisan DEGs antar tipe sel
+# Venn Diagram: Comparing overlapping DEGs across cell types
 draw.pairwise.venn(
   area1 = nrow(res_endotel_sig),
   area2 = nrow(res_neuron_sig),
@@ -110,19 +110,19 @@ draw.pairwise.venn(
 ```
 ***3. Heatmap***
 ```R
-# Heatmap untuk Common DEGs
+# Heatmap for Common DEGs
 common_genes <- intersect(
   res_endotel$Gene.symbol[res_endotel$P.Value < 0.05 & abs(res_endotel$logFC) > 0.5],
   res_neuron$Gene.symbol[res_neuron$P.Value < 0.05 & abs(res_neuron$logFC) > 0.5]
 )
 
-# Matriks ekspresi
+# Expression matrix
 common_genes <- common_genes[common_genes != "" & !is.na(common_genes)]
 mat_heatmap <- ex_filtered[rownames(res_endotel[res_endotel$Gene.symbol %in% common_genes, ]), ]
 rownames(mat_heatmap) <- res_endotel$Gene.symbol[res_endotel$Gene.symbol %in% common_genes]
 mat_heatmap <- mat_heatmap[!duplicated(rownames(mat_heatmap)), ] # Unique Gene Representation
 
-# Visualisasi heatmap
+# Visualization with pheatmap
 pheatmap(
   mat_heatmap, 
   scale = "row", 
@@ -133,7 +133,7 @@ pheatmap(
 ```
 
 ### 2.6. _Enrichment Analysis_ 
-Identifikasi gen yang beririsan (common DEGs) antara kedua tipe sel menggunakan database _Gene Ontology_ (GO) dan _Kyoto Encyclopedia of Genes and Genomes_ (KEGG) untuk memetakan perubahan jalur fungsional.
+Common DEGs between the two cell types were identified via intersection analysis, followed by functional enrichment using the Gene Ontology and KEGG databases to identify enriched pathways.
 
 ```R
 # GO Enrichment (Biological Process)
@@ -144,47 +144,47 @@ kegg <- enrichKEGG(gene = genes_entrez$ENTREZID, organism = 'hsa')
 pathview(gene.data = kegg_logFC, pathway.id = "hsa04216", species = "hsa")
 ```
 
-Skrip R lengkap yang digunakan untuk analisis ini (termasuk pemrosesan `limma`, visualisasi `ggplot2`, dan pengayaan `clusterProfiler`) tersedia di folder utama repositori ini (file `Coding GSE161355.R`)
+The complete R script used for this analysis (including `limma`, `ggplot2` visualization, and `clusterProfiler` enrichment) is available in the main directory of this repository (file `Coding GSE161355.R`)
 
 
-# 3. Hasil dan Pembahasan
-### 3.1. Identifikasi _Common DEGs_
+# 3. Results and Discussion
+### 3.1. Identification of Common DEGs
 
-Analisis integratif menggunakan diagram Venn berhasil mengidentifikasi 77 gen yang beririsan (_common DEGs_) yang signifikan secara simultan pada sel endotel dan sel neuron.
+Integrative analysis using Venn diagrams successfully identified 77 overlapping genes (common DEGs) that were significantly dysregulated in both endothelial and neuronal cells.
 
 ![Venn_Diagram.png](plot-result/Venn_Diagram.png)
 
-Gambar 1. Diagram Venn menunjukkan irisan gen yang signifikan di kedua jenis sel
+Figure 1. Venn diagram illustrating significant gene overlaps endothelial and neuronal cells.
 
 ![Heatmap.png](plot-result/Heatmap.png)
 
-Gambar 2. Heatmap 77 gen utama menunjukkan pemisahan sempurna antara klaster Normal dan klaster Diabetes
+Figure 2. Heatmap of the top 77 common DEGs showing distinct clustering between Normal and Diabetic groups.
 
-### 3.2. Analisis Jalur Fungsional (GO & KEGG)
+### 3.2. Functional Pathway Analysis (GO & KEGG)
 
 ![GO_Analysis.png](plot-result/GO_Analysis.png)
 
-Gambar 3. Analisis _Gene Ontology_ (GO) pada 77 common DEGs menunjukkan gangguan pada proses biologis krusial, terutama positive regulation of cell-cell adhesion dan cell-matrix adhesion.
+Figure 3. Gene Ontology (GO) enrichment analysis of the 77 common DEGs revealed significant involvement in biological processes related to cell adhesion, including positive regulation of cell–cell adhesion and cell–matrix adhesion.
 
 ![KEGG_Enrich.png](plot-result/KEGG_Enrich.png)
 
-Gambar 4. Analisis _Kyoto Encyclopedia of Genes and Genomes_ (KEGG) mengidentifikasi 7 jalur yang signifikan secara statistik (P.Val < 0.2).
+Figure 4. KEGG pathway analysis identified seven enriched pathways (p-value < 0.2).
 
 ![ferroptosis_hsa04216.pathview.png](plot-result/ferroptosis_hsa04216.pathview.png)
 
-Gambar 5. _Ferroptosis_ (hsa04216)
+Figure 5. _Ferroptosis_ (hsa04216)
 
 ![focal-adhesion_hsa04510.pathview.png](plot-result/focal-adhesion_hsa04510.pathview.png)
 
-Gambar 6. _Focal Adhesion_ (hsa04510)
+Figure 6. _Focal Adhesion_ (hsa04510)
 
 ![Adherens-Junction_hsa04520.pathview.png](plot-result/Adherens-Junction_hsa04520.pathview.png)
 
-Gambar 7. _Adherens Junction_ (hsa04520)
+Figure 7. _Adherens Junction_ (hsa04520)
 
 ![Integrin-signaling_hsa04518.pathview.png](plot-result/Integrin-signaling_hsa04518.pathview.png)
 
-Gambar 8. _Integrin signaling_ (hsa04518)
+Figure 8. _Integrin signaling_ (hsa04518)
 
-# 4. Kesimpulan
-Kerusakan unit neurovaskular pada Diabetes Tipe 2 tidak terjadi secara parsial, melainkan melibatkan interaksi kompleks antara kegagalan vaskular dan degenerasi saraf secara sinkron. Temuan ini menekankan pentingnya strategi terapeutik masa depan yang menggabungkan perlindungan saraf (neuroprotection) sekaligus perbaikan vaskular (vascular repair).
+# 4. Conclusion
+Neurovascular unit impairment in Type 2 Diabetes reflects tightly coupled interactions between vascular dysfunction and neuronal degeneration, suggesting that effective therapeutic strategies should simultaneously target both compartments.
