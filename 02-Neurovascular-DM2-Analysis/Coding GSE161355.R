@@ -1,19 +1,21 @@
-# Modul: Profil Ekspresi Gen Unit Neurovaskular pada Diabetes Melitus Tipe 2
-# Dataset: GSE161355 (Diabetes Tipe 2 vs Normal)
+# Module: Gene Expression Profiling of the Neurovascular Unit in Type 2 Diabetes Mellitus
+# Dataset: GSE161355 (Type 2 Diabetes vs. Normal)
 # Platform: Microarray (Affymetrix Human Genome U133 Plus 2.0 Array - GPL570)
-# Tujuan: Mengidentifikasi Differentially Expressed Genes (DEG) 
+# Objective: To identify Differentially Expressed Genes (DEGs) 
 
 
 # ------------------------------------------------------------------------------
-# PART A. PERSIAPAN LINGKUNGAN KERJA 
-# Sebelum analisis dimulai, kita harus memastikan semua 'library' khusus 
-# bioinformatika tersedia dengan menggunakan BiocManager untuk mengelola paket.
+# PART A. WORKSPACE PREPARATION 
+# Prior to analysis, all required bioinformatics packages were installed and managed
+# using the BiocManager package in R.
 # ------------------------------------------------------------------------------
-# Memastikan BiocManager terinstal untuk akses ke repository Bioconductor 
+# Ensure BiocManager is installed for Bioconductor repository access 
 if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 
-# Instalasi paket utama (GEOquery untuk data GEO, limma untuk analisis statistik)
+# Install core packages (GEOquery for data retrieval, limma for differential expression analysis)
 BiocManager::install(c("GEOquery", "limma", "hgu133plus2.db", "AnnotationDbi"), ask = FALSE, update = FALSE)
+
+# Install CRAN packages for visualization, data manipulation, and dimensionality reduction                       
 install.packages(c("pheatmap", "ggplot2", "dplyr", "umap", "VennDiagram"))
 
 library(GEOquery)
@@ -29,36 +31,36 @@ library(VennDiagram)
 
 
 # ------------------------------------------------------------------------------
-# PART B. PENGAMBILAN DATA DARI GEO
-# Langkah ini mengambil 'ExpressionSet' yang berisi data mentah dan metadata.
+# PART B. DATA ACQUISITION FROM GEO
+# This step retrieves the 'ExpressionSet' containing both raw data and metadata.
 # ------------------------------------------------------------------------------
 
-# getGEO(): fungsi untuk mengunduh dataset berdasarkan ID GEO.
-# GSEMatrix = TRUE -> data diambil dalam format ExpressionSet.
+# getGEO(): Function to download the dataset based on the GEO accession ID.
+# GSEMatrix = TRUE -> Retrieves data in ExpressionSet format.
 
 gset <- getGEO("GSE161355", GSEMatrix = TRUE, AnnotGPL = TRUE)[[1]]
 
 
 
 # ------------------------------------------------------------------------------
-# PART C. DATA PRE-PROCESSING & NORMALISASI
-# Data microarray mentah seringkali memiliki varians yang tidak stabil.
-# Kita melakukan transformasi log2 untuk menormalisasi distribusi data.
+# PART C. DATA PRE-PROCESSING & NORMALIZATION
+# Raw microarray data often exhibits heteroscedasticity.
+# Log2 transformation is performed to normalize the data distribution.
 # ------------------------------------------------------------------------------
 
-# exprs(): mengambil matriks ekspresi gen
-# Baris  = probe/gen
-# Kolom  = sampel
+# exprs(): Extracts the gene expression matrix
+# Baris  = Probes/Genes
+# Kolom  = Samples
 
 ex <- exprs(gset)
 
-# Cek apakah data membutuhkan Log transformasi
+# Determine if the dataset requires Log transformation
 qx <- as.numeric(quantile(ex, c(0, 0.25, 0.5, 0.75, 0.99, 1), na.rm = TRUE))
 LogTransform <- (qx[5] > 100) || (qx[6] - qx[1] > 50 && qx[2] > 0)
 
-#IF statement:
-#Jika LogTransform = TRUE, maka lakukan log2
-#Nilai <= 0 tidak boleh di-log, maka diubah menjadi NA
+# IF statement:
+# If LogTransform = TRUE, apply log2 transformation.
+# Values <= 0 are replaced with NA to avoid undefined log results.
 if (LogTransform) {
   ex[ex <= 0] <- NA
   ex <- log2(ex)
@@ -67,109 +69,111 @@ if (LogTransform) {
 
 
 # ------------------------------------------------------------------------------
-# PART D. DEFINISI KELOMPOK DAN FILTERING SAMPEL
+# PART D. GROUP DEFINITION & SAMPLE FILTERING
 # ------------------------------------------------------------------------------
 
-# Dari ExpressionSet, identifikasi kolom metadata yang berisi informasi biologis
+# Identify metadata columns from the ExpressionSet containing biological information
 View(pData(gset))
 unique(pData(gset)[["source_name_ch1"]])
 
-# Setelah kolom yang relevan diketahui, buat variabel 'group_info'
-# untuk menyimpan informasi kondisi biologis setiap sampel
+# Once the relevant column is identified, create the 'group_info' variable
+# to store the biological condition metadata for each sample
 group_info <- pData(gset)[["source_name_ch1"]]
 
-# Mengonversi isi kolom menjadi format yang valid sebagai nama di R
+# Standardize column values into R-compatible names
 groups <- make.names(group_info)
 
-# Mengubah data menjadi faktor (variabel kategorikal)
-# sehingga R dapat mengelompokkan data ke dalam level tertentu
+# Convert the group information into a factor (categorical variable)
+# allowing R to categorize data into specific experimental levels
 gset$group <- factor(groups)
 
-# Pengecekan Level Grup: Memastikan metadata terbaca dengan benar oleh R
-# sebelum melangkah ke tahap analisis statistik yang lebih kompleks.
+# Group Level Verification: Ensure metadata is correctly parsed by R
+# prior to proceeding with downstream complex statistical analyses.
 nama_grup <- levels(gset$group)
 print(nama_grup)
 
-# Pilih kelompok yang akan dianalisis
-# Hanya ingin membandingkan Endotel dan Neuron (tanpa Astrosit)
+# Define the focus groups for downstream analysis
+# Comparing Endothelial and Neuronal populations only (excluding Astrocytes)
 grup_fokus <- c("Control.Endothelial.cells", "Diabetic.Endothelial.cells", 
                 "Control.Neurones", "Diabetic.Neurones")
 
-# Memfilter ExpressionSet agar hanya mencakup sampel dari kelompok yang dipilih
+# Filter the ExpressionSet to include only samples from the selected groups
 gset_filtered <- gset[, gset$group %in% grup_fokus]
 
-# Memperbarui faktor untuk menghapus level yang tidak digunakan (misalnya Astrocytes)
-# serta memastikan urutan level sesuai dengan yang diinginkan
+# Update factors to remove unused levels (e.g., Astrocytes)
+# and ensure the level order aligns with the desired experimental design
 gset_filtered$group <- factor(gset_filtered$group, levels = grup_fokus)
 
 
 
 # ------------------------------------------------------------------------------
-# PART E. ANALISIS STATISTIK DIFFERENTIAL EXPRESSION (LIMMA)
-# Menggunakan Linear Models for Microarray (limma) untuk menemukan gen yang 
-# berubah secara signifikan di antara kedua kelompok.
+# PART E. DIFFERENTIAL EXPRESSION STATISTICAL ANALYSIS (LIMMA)
+# Using Linear Models for Microarray (limma) to identify genes that
+# exhibit significant differential expression between groups.
 # ------------------------------------------------------------------------------
 
-# Membuat Matriks Desain: Merepresentasikan struktur eksperimen secara matematis.
+# Design Matrix Construction: Mathematically representing the experimental structure.
 design <- model.matrix(~0 + gset_filtered$group)
 colnames(design) <- levels(gset_filtered$group)
 
-# Menentukan perbandingan (Diabetes vs Control) untuk masing-masing tipe sel
+# Define contrast vectors (Diabetes vs. Control) for each specific cell type
 contrast_matrix <- makeContrasts(
-  Diabetes_Efek_Endotel = Diabetic.Endothelial.cells - Control.Endothelial.cells,
-  Diabetes_Efek_Neuron = Diabetic.Neurones - Control.Neurones,
+  Diabetes_Effect_Endothelial = Diabetic.Endothelial.cells - Control.Endothelial.cells,
+  Diabetes_Effect_Neuronal = Diabetic.Neurones - Control.Neurones,
   levels = design
 )
 
-# Fit Model: Menghitung rata-rata ekspresi tiap gen pada setiap grup 
+# Linear Model Fitting: Estimating mean expression levels for each gene per group 
 fit <- lmFit(gset_filtered, design)
 
-# eBayes: Langkah krusial untuk menstabilkan estimasi varians gen menggunakan 
-# metode statistik Bayesian, sehingga hasil lebih akurat meski jumlah sampel terbatas
+# Empirical Bayes (eBayes) Moderation: A critical step to 
+# stabilize gene variance estimates using Bayesian methods, 
+# ensuring accurate results despite limited sample sizes.
 fit2 <- contrasts.fit(fit, contrast_matrix)
 fit2 <- eBayes(fit2)
 
-# Mengambil tabel hasil akhir (Top Table) dengan koreksi FDR (False Discovery Rate) 
+# Extract Top-Ranked Genes (Top Table) with FDR (False Discovery Rate) correction 
 res_endotel <- topTable(
   fit2, 
-  coef="Diabetes_Efek_Endotel", 
+  coef="Diabetes_Effect_Endothelial", 
   adjust="fdr", 
   sort.by="B", 
   number=Inf
 )
 res_neuron <- topTable(
   fit2, 
-  coef="Diabetes_Efek_Neuron", 
+  coef="Diabetes_Effect_Neuronal", 
   adjust="fdr", 
   sort.by="B", 
   number=Inf
 )
 
-# Ekstraksi hasil (Menggunakan Raw P-Value < 0.05 karena sampel terbatas)
+# Extract significant results using raw p-value < 0.05
+# (applied due to limited sample size for exploratory analysis)
 res_endotel_sig <- res_endotel[res_endotel$P.Value < 0.05, ]
 res_neuron_sig <- res_neuron[res_neuron$P.Value < 0.05, ]
 
-# --- CATATAN ANALISIS: PEMILIHAN AMBANG BATAS SIGNIFIKANSI ---
-# Pada dataset ini (GSE161355), jumlah sampel per kelompok terbatas (n=6).
-# Penggunaan koreksi Multiple Testing (FDR/adj.P.Val) menghasilkan nilai yang 
-# sangat konservatif (mendekati 1), sehingga tidak ada gen yang lolos filter ketat.
-# Untuk tujuan eksplorasi biologis dan pembuatan profil ekspresi (Heatmap/Volcano), 
-# saya menggunakan 'Raw P-Value < 0.05' sebagai ambang batas. 
+# --- ANALYSIS NOTE: SIGNIFICANCE THRESHOLD SELECTION ---
+# In this dataset (GSE161355), the sample size per group is limited (n=6).
+# Applying multiple testing correction (FDR/adj.P.Val) yields highly 
+# conservative results, with few or no genes passing stringent thresholds.
+# For exploratory analysis and expression profiling (e.g., heatmaps, volcano plots),
+# 'Raw P-Value < 0.05' was used as an exploratory threshold.
 
 
 
 # ------------------------------------------------------------------------------
-# PART F. ANOTASI NAMA GEN
-# Melakukan mapping dari Probe ID ke Gene Symbol menggunakan database hgu133plus2.db.
+# PART F. GENE ANNOTATION
+# Annotate probe IDs to gene symbols using hgu133plus2.db
 # ------------------------------------------------------------------------------
 
-# 1. Anotasi untuk Endotel
-# Mengambil ID probe dari hasil signifikan Endotel
+# 1. Endothelial Cell Annotation
+# Extract Probe IDs from the significant endothelial DEG results
 probe_ids_endotel <- rownames(res_endotel_sig)
 
-# Mapping probe -> gene symbol & gene name
-# Gunakan library anotasi yang sesuai dengan platform (Affymetrix U133 Plus 2.0)
-# Biasanya menggunakan package 'hgu133plus2.db'
+# Map probes to gene symbols and gene names
+# Use the annotation library specific to the platform (Affymetrix U133 Plus 2.0)
+# Typically uses the 'hgu133plus2.db' package
 gene_ann_endotel <- AnnotationDbi::select(
   hgu133plus2.db, 
   keys = probe_ids_endotel, 
@@ -177,12 +181,11 @@ gene_ann_endotel <- AnnotationDbi::select(
   keytype = "PROBEID"
 )
 
-# Menambahkan kolom PROBEID dari rownames untuk keperluan penggabungan
+# Add a PROBEID column from row names to facilitate data merging
 res_endotel_sig$PROBEID <- rownames(res_endotel_sig)
 
-# Menggabungkan hasil analisis limma dengan anotasi gen
-# berdasarkan PROBEID (probe ID)
-# all.x = TRUE memastikan semua hasil statistik tetap dipertahankan
+# Merge limma statistical results with gene annotations based on PROBEID
+# all.x = TRUE ensures all statistical values are retained during the merge
 res_endotel_sig <- merge(
   res_endotel_sig, 
   gene_ann_endotel, 
@@ -191,13 +194,13 @@ res_endotel_sig <- merge(
 )
 
 
-# 2. Anotasi untuk Neuron
-# Mengambil ID probe dari hasil signifikan Neuron
+# 2. Neuronal Cell Annotation
+# Extract Probe IDs from the significant neuronal DEG results
 probe_ids_neuron <- rownames(res_neuron_sig)
 
-# Mapping probe -> gene symbol & gene name
-# Gunakan library anotasi yang sesuai dengan platform (Affymetrix U133 Plus 2.0)
-# Biasanya menggunakan package 'hgu133plus2.db'
+# Map probes to gene symbols and gene names
+# Use the annotation library specific to the platform (Affymetrix U133 Plus 2.0)
+# Typically uses the 'hgu133plus2.db' package
 gene_ann_neuron <- AnnotationDbi::select(
   hgu133plus2.db, 
   keys = probe_ids_neuron, 
@@ -205,12 +208,11 @@ gene_ann_neuron <- AnnotationDbi::select(
   keytype = "PROBEID"
 )
 
-# Menambahkan kolom PROBEID dari rownames untuk keperluan penggabungan
+# Add a PROBEID column from row names to facilitate data merging
 res_neuron_sig$PROBEID <- rownames(res_neuron_sig)
 
-# Menggabungkan hasil analisis limma dengan anotasi gen
-# berdasarkan PROBEID (probe ID)
-# all.x = TRUE memastikan semua hasil statistik tetap dipertahankan
+# Merge limma statistical results with gene annotations based on PROBEID
+# all.x = TRUE ensures all statistical values are retained during the merge
 res_neuron_sig <- merge(
   res_neuron_sig, 
   gene_ann_neuron, 
@@ -221,17 +223,16 @@ res_neuron_sig <- merge(
 
 
 # ------------------------------------------------------------------------------
-# PART G. QUALITY CONTROL & EKSPLORASI DATA (VISUALISASI AWAL)
-# Sebelum masuk ke hasil akhir, kita perlu memastikan kualitas data dan 
-# melihat bagaimana sampel terpisah secara alami.
+# PART G. QUALITY CONTROL & DATA EXPLORATION (INITIAL VISUALIZATION)
+# Assess data quality and examine sample clustering before finalizing results.
 # ------------------------------------------------------------------------------
 
-# 1. BOXPLOT: Mengecek distribusi nilai ekspresi antar sampel
-# Penting untuk memastikan tidak ada sampel yang memiliki rentang nilai yang sangat berbeda (batch effect).
-# Set warna berdasarkan grup
+# 1. BOXPLOT: Assess expression value distribution across samples
+# Used to identify potential outliers or significant batch effects. 
+# Assign colors based on experimental groups
 group_colors <- as.numeric(gset_filtered$group)+1
 
-# Mengambil matriks ekspresi dari data yang sudah difilter
+# Extract expression matrix from filtered data
 ex_filtered <- exprs(gset_filtered)
 
 par(mar = c(8, 4, 4, 12), xpd = TRUE)
@@ -241,7 +242,7 @@ boxplot(
   las = 2, 
   outline = FALSE, 
   cex.axis = 0.7,
-  main = "Boxplot Distribusi Nilai Ekspresi per Sampel (Endotel & Neuron)",
+  main = "Expression Value Distribution per Sample (Endothelial & Neuronal",
   ylab = "Expression Value (log2)"
 )
 
@@ -256,9 +257,9 @@ legend(
 
 par(mar=c(5, 4, 4, 2), xpd=FALSE)
 
-# 2. DENSITY PLOT: Melihat sebaran global nilai ekspresi
-# Plot ini memastikan bahwa proses normalisasi log2 telah berhasil menyamakan distribusi antar grup.
-# Gabungkan ekspresi & grup ke data frame
+# 2. DENSITY PLOT: Visualize global expression distributions
+# Assess whether log2 normalization aligns distributions across samples
+# Combine expression & groups into a data frame
 expr_long <- data.frame(
   Expression = as.vector(ex_filtered),
   Group = rep(gset_filtered$group, each = nrow(ex_filtered))
@@ -269,36 +270,36 @@ ggplot(expr_long, aes(x = Expression, color = Group)) +
   theme_minimal() +
   scale_color_brewer(palette = "Set1") + 
   labs(
-    title = "Distribusi Global Ekspresi Gen (Endotel vs Neuron)",
+    title = "Global Gene Expression Distribution (Endothelial vs. Neuronal)",
     subtitle = "Dataset: GSE161355",
     x = "Expression Value (log2)",
     y = "Density"
   )
 
-# 3. UMAP: Visualisasi Dimensi Rendah
-# UMAP memastikan bahwa profil genetik sel Endotel dan Neuron memang terpisah secara alami, 
-# serta melihat seberapa kuat pengaruh Diabetes terhadap perubahan ekspresi gen di masing-masing tipe sel.
+# 3. UMAP: Low-dimensional visualization
+# Visualizes separation between endothelial and neuronal gene expression profiles
+# and assesses the impact of diabetes on gene expression changes within each cell type.
 
-# Transpose matriks ekspresi:
-# UMAP bekerja dengan menghitung kemiripan antar sampel (baris)
+# Transpose expression matrix:
+# UMAP calculates similarities across samples (rows)
 umap_input <- t(ex_filtered)
 
-# Jalankan UMAP
+# Run UMAP
 umap_result <- umap(umap_input)
 
-# Simpan hasil ke data frame
+# Save results to a data frame
 umap_df <- data.frame(
   UMAP1 = umap_result$layout[,1], 
   UMAP2 = umap_result$layout[,2], 
   Group = gset_filtered$group
 )
 
-# Plot UMAP
+# Render UMAP plot
 ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = Group)) +
   geom_point(size = 4, alpha = 0.8) +
   theme_minimal() + 
   labs(
-    title = "UMAP Plot: Pengelompokan Sampel Global",
+    title = "UMAP Plot: Global Sample Clustering",
     x = "UMAP 1",
     y = "UMAP 2"
 )
@@ -306,12 +307,13 @@ ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = Group)) +
 
 
 # ------------------------------------------------------------------------------
-# PART H. VISUALISASI DATA (INTERPRETASI HASIL)
+# PART H. DATA VISUALIZATION (RESULTS INTERPRETATION)
 # ------------------------------------------------------------------------------
 
-# 1. VOLCANO PLOT: Memberikan gambaran global perubahan gen (Log Fold Change vs Signifikansi)
+# 1. VOLCANO PLOT: Visualize global differential expression patterns
+# (Log Fold Change vs. Statistical Significance)
 
-# Volcano Plot: Endotel (Threshold: P < 0.05 & |logFC| > 0.5)
+# Volcano Plot: Endothelial (Threshold: P < 0.05 & |logFC| > 0.5)
 res_endotel$status <- "NO"
 res_endotel$status[res_endotel$logFC > 0.5 & res_endotel$P.Value < 0.05] <- "UP"
 res_endotel$status[res_endotel$logFC < -0.5 & res_endotel$P.Value < 0.05] <- "DOWN"
@@ -322,7 +324,7 @@ ggplot(res_endotel, aes(x = logFC, y = -log10(P.Value), color = status)) +
   geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed") +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
   theme_minimal() + 
-  labs(title = "Volcano Plot: Endothelial Cells", subtitle = "Diabetic vs Normal Control")
+  labs(title = "Volcano Plot: Endothelial Cells", subtitle = "Diabetic vs. Normal Control")
 
 # Volcano Plot: Neuron (Threshold: P < 0.05 & |logFC| > 0.5)
 res_neuron$status <- "NO"
@@ -335,11 +337,10 @@ ggplot(res_neuron, aes(x = logFC, y = -log10(P.Value), color = status)) +
   geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed") +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
   theme_minimal() + 
-  labs(title = "Volcano Plot: Neuronal Cells", subtitle = "Diabetic vs Normal Control")
+  labs(title = "Volcano Plot: Neuronal Cells", subtitle = "Diabetic vs. Normal Control")
 
 
-# 2. VENN DIAGRAM: Memberikan gambaran mengenai jumlah gen DEGs 
-# pada masing-masing tipe sel (endotel & neuron), serta jumlah gen yang overlap di antara keduanya.
+# 2. VENN DIAGRAM: Visualize DEG distribution and overlap between endothelial and neuronal cells.
 
 draw.pairwise.venn(
   area1 = nrow(res_endotel[res_endotel$P.Value < 0.05 & abs(res_endotel$logFC) > 0.5, ]),
@@ -361,69 +362,68 @@ grid.text(
 )
 
 
-# 3. HEATMAP: Melihat pola ekspresi Common Genes (Gen yang sama-sama muncul di kedua sel)
-# Sebelum membuat Heatmap, identifikasi daftar simbol gen yang sama-sama muncul di kedua sel (Common Genes)
-# Menggunakan kriteria P < 0.05 & |logFC| > 0.5
+# 3. HEATMAP: Visualize expression patterns of common DEGs shared across both cell types
+# Identify genes consistently dysregulated in endothelial and neuronal cells
+# Apply exploratory criteria: P < 0.05 & |logFC| > 0.5
 common_genes <- intersect(
   res_endotel$Gene.symbol[res_endotel$P.Value < 0.05 & abs(res_endotel$logFC) > 0.5],
   res_neuron$Gene.symbol[res_neuron$P.Value < 0.05 & abs(res_neuron$logFC) > 0.5]
 )
 
-# Membersihkan list: Buang baris kosong "" dan NA agar heatmap tidak error
+# Data Cleaning: Remove empty strings ("") and NA values to prevent rendering errors
 common_genes <- common_genes[common_genes != "" & !is.na(common_genes)]
 
-# Membuat matriks heatmap langsung dari ex_filtered
-# Mengambil hanya 1 probe per gen (unique) agar plot tidak terlalu rapat/numpuk
+# Construct heatmap matrix from ex_filtered
+# Select one representative probe per gene to avoid redundancy
 mat_heatmap <- ex_filtered[rownames(res_endotel[res_endotel$Gene.symbol %in% common_genes, ]), ]
 rownames(mat_heatmap) <- res_endotel$Gene.symbol[res_endotel$Gene.symbol %in% common_genes]
 mat_heatmap <- mat_heatmap[!duplicated(rownames(mat_heatmap)), ] # Unique Gene Representation
 
-# Visualisasi Heatmap Final
+# Final Heatmap Visualization
 pheatmap(
   mat_heatmap,
   scale = "row", 
-  clustering_method = "ward.D2", # Kelompok warna lebih kontras & rapi
+  clustering_method = "ward.D2", # Enhances contrast and clustering organization
   annotation_col = data.frame(Group = gset_filtered$group, row.names = colnames(ex_filtered)),
   show_colnames = FALSE,
   show_rownames = TRUE, 
   fontsize_row = 7, 
   main = "Heatmap Common DEGs (Strict Filter: P < 0.05 & |FC| > 0.5)",
-  color = colorRampPalette(c("#2980b9", "white", "#c0392b"))(100), # Pro Blue-Red Gradient
+  color = colorRampPalette(c("#2980b9", "white", "#c0392b"))(100), # Professional Blue-Red Gradient
   border_color = NA
 )
 
 
 
 # ------------------------------------------------------------------------------
-# PART I. ANALISIS GENE ONTOLOGY (GO)
-# Analisis GO difokuskan pada Biological Process (BP).
-# Alasan: BP memberikan gambaran langsung mengenai perubahan jalur fungsional 
-# dan proses sistemik (seperti inflamasi atau metabolisme) yang terjadi pada 
-# sel endotel dan neuron akibat paparan kondisi diabetik kronis.
+# PART I. GENE ONTOLOGY (GO) ENRICHMENT ANALYSIS
+# Focus on Biological Process (BP).
+# BP provides insight into functional pathway dysregulation and physiological processes
+# in endothelial and neuronal cells under diabetic conditions
 # ------------------------------------------------------------------------------
 
 library(clusterProfiler)
 library(org.Hs.eg.db)
 library(enrichplot)
 
-# Konversi Gene Symbol ke Entrez ID (Standar database GO/KEGG)
-# Menggunakan data 'common_genes' hasil irisan Venn sebelumnya
+# Convert Gene Symbols to Entrez IDs (Standard format for GO/KEGG databases)
+# Use 'common_genes' identified from the Venn intersection
 genes_entrez <- bitr(common_genes, 
                      fromType = "SYMBOL", 
                      toType   = "ENTREZID", 
                      OrgDb    = org.Hs.eg.db)
 
-# Pengayaan GO: Biological Process (BP)
-# Menemukan proses biologis utama yang paling terpengaruh di kedua populasi sel
+# GO Enrichment: Biological Process (BP)
+# Identify significantly altered biological processes across both cell types
 go_bp <- enrichGO(gene           = genes_entrez$ENTREZID,
                    OrgDb         = org.Hs.eg.db,
                    ont           = "BP", 
                    pAdjustMethod = "BH",
-                   pvalueCutoff  = 0.15,  #Optimal threshold: Menghasilkan 17 jalur fungsional utama
+                   pvalueCutoff  = 0.15,  #Optimal threshold: Identifies 17 key functional pathways
                    qvalueCutoff  = 0.2,
                    readable      = TRUE)
 
-# Visualisasi dotplot (Menampilkan 15 jalur paling signifikan)
+# Dotplot visualization: Display top 15 enriched pathways
 dotplot(go_bp, showCategory = 15) + 
   labs(
     title = "Top Biological Processes: Common DEGs in Diabetic Cells",
@@ -431,30 +431,31 @@ dotplot(go_bp, showCategory = 15) +
     x = "Gene Ratio",
     y = "Biological Process"
   )
+
+# Export results for further reporting
 write.csv(as.data.frame(go_bp), "GO_Enrichment_Results.csv")
 
 
 # ------------------------------------------------------------------------------
-# PART J. ANALISIS JALUR KEGG (KYOTO ENCYCLOPEDIA OF GENES AND GENOMES)
-# Analisis KEGG digunakan untuk memetakan gen-gen ke dalam jalur sinyal metabolik 
-# dan patofisiologi penyakit yang terintegrasi secara global.
-# Threshold: P-Value < 0.2 digunakan untuk mengeksplorasi jalur fungsional utama.
+# PART J. KEGG PATHWAY ANALYSIS (KYOTO ENCYCLOPEDIA OF GENES AND GENOMES)
+# Map genes to signaling and metabolic pathways to explore disease-related biological processes
+# Apply exploratory threshold (p-value < 0.2)
 # ------------------------------------------------------------------------------
 
-# Pengayaan Jalur KEGG
-# 'hsa' merujuk pada Homo sapiens (Manusia)
+# KEGG Pathway Enrichment
+# 'hsa' refers to Homo sapiens (Human)
 kegg <- enrichKEGG(
   gene = genes_entrez$ENTREZID,
   organism = 'hsa', 
   pvalueCutoff = 0.2
 )
 
-# Melihat seluruh daftar hasil KEGG dalam bentuk tabel
+# Export the full KEGG result list as a data frame
 kegg_table <- as.data.frame(kegg)
-View(kegg_table) # Akan membuka jendela baru berisi daftar lengkap
+View(kegg_table) # Opens a detailed result window for inspection
 
 
-# Visualisasi Barplot untuk Jalur KEGG
+# Barplot Visualization for KEGG Pathways
 barplot(kegg, showCategory = 10) + 
   labs(
     title = "Top KEGG Pathways: Shared Mechanisms in Diabetic Cells",
@@ -466,70 +467,71 @@ barplot(kegg, showCategory = 10) +
 head(as.data.frame(kegg))
 
 
-# Visualisasi Spesifik: Pathview (Peta Berwarna Merah-Hijau)
-# Merah = Gen Naik (Up), Hijau = Gen Turun (Down).
+# Pathway-Specific Visualization
+# Red = Up-regulated, Blue = Down-regulated.
 library(pathview)
 
-# Ambil data logFC untuk gen irisan dari res_endotel
-# Kita gunakan Entrez ID sebagai nama (karena pathview butuh Entrez ID)
+# Extract logFC values for overlapping genes from 'res_endotel'
+# Map Entrez IDs as names to comply with Pathview requirements
 kegg_logFC <- res_endotel$logFC[res_endotel$Gene.symbol %in% common_genes]
 names(kegg_logFC) <- genes_entrez$ENTREZID[match(common_genes, genes_entrez$SYMBOL)]
 
-# Hapus jika ada NA
+# Remove NA values to ensure visualization integrity
 kegg_logFC <- kegg_logFC[!is.na(names(kegg_logFC))]
 
 
-# VISUALISASI PATHWAYS
-# 1. Visualisasi Jalur "Ferroptosis" (hsa04216)
+# SPECIFIC PATHWAY VISUALIZATIONS
+# 1. "Ferroptosis" Pathway (hsa04216)
 pathview(
   gene.data  = kegg_logFC,
   pathway.id = "hsa04216", 
   species    = "hsa",
   limit      = list(gene = 2, cpd = 1),
   low        = "blue",              # Down-regulated
-  mid        = "gray",              # Netral
+  mid        = "gray",              # Neutral
   high       = "red"                # Up-regulated
 )
 
-# 2. Visualisasi Jalur "Focal Adhesion" (hsa04510)
+# 2. "Focal Adhesion" Pathway (hsa04510)
 pathview(
   gene.data  = kegg_logFC,
   pathway.id = "hsa04510", 
   species    = "hsa",
   limit      = list(gene = 2, cpd = 1),
   low        = "blue",              # Down-regulated
-  mid        = "gray",              # Netral
+  mid        = "gray",              # Neutral
   high       = "red"                # Up-regulated
 )
 
-# 3. Visualisasi Jalur "Adherens Junction" (hsa04520)
+# 3. "Adherens Junction" Pathway (hsa04520)
 pathview(
   gene.data  = kegg_logFC,
   pathway.id = "hsa04520", 
   species    = "hsa",
   limit      = list(gene = 2, cpd = 1),
   low        = "blue",              # Down-regulated
-  mid        = "gray",              # Netral
+  mid        = "gray",              # Neutral
   high       = "red"                # Up-regulated
 )
 
-# 4. Visualisasi Jalur "Integrin signaling" (hsa04518)
+# 4. "Integrin signaling" Pathway (hsa04518)
 pathview(
   gene.data  = kegg_logFC,
   pathway.id = "hsa04518", 
   species    = "hsa",
   limit      = list(gene = 2, cpd = 1),
   low        = "blue",              # Down-regulated
-  mid        = "gray",              # Netral
+  mid        = "gray",              # Neutral
   high       = "red"                # Up-regulated
 )
 
 
 
 # ------------------------------------------------------------------------------
-# PART K. MENYIMPAN HASIL
+# PART K. DATA EXPORT
 # ------------------------------------------------------------------------------
 
-write.csv(res_endotel_sig, "Hasil_DEGs_Endotel_Diabetes.csv", row.names = FALSE)
-write.csv(res_neuron_sig, "Hasil_DEGs_Neuron_Diabetes.csv", row.names = FALSE)
-message("Analisis selesai! File hasil telah disimpan.")
+# Save the significant DEG results for both cell types
+write.csv(res_endotel_sig, "Diabetic_Endothelial_DEGs.csv", row.names = FALSE)
+write.csv(res_neuron_sig, "Diabetic_Neuronal_DEGs.csv", row.names = FALSE)
+message("Analysis complete. Output files have been successfully exported.")
