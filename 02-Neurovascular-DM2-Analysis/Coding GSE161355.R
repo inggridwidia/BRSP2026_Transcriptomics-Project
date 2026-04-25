@@ -49,8 +49,8 @@ gset <- getGEO("GSE161355", GSEMatrix = TRUE, AnnotGPL = TRUE)[[1]]
 # ------------------------------------------------------------------------------
 
 # exprs(): Extracts the gene expression matrix
-# Baris  = Probes/Genes
-# Kolom  = Samples
+# Rows    = Probes/Genes
+# Columns = Samples
 
 ex <- exprs(gset)
 
