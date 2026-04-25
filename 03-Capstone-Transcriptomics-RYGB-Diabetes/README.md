@@ -1,14 +1,14 @@
-# Analisis Transkriptomik Pasca _Roux-en-Y Gastric Bypass_ pada Pasien Diabetes Mellitus Tipe 2
+# Transcriptomic Analysis of Post-Roux-en-Y Gastric Bypass in Type 2 Diabetes Mellitus Patients
 
-# 1. Pendahuluan
-Operasi _Roux-en-Y Gastric Bypass_ (RYGB) tidak hanya bertujuan untuk penurunan berat badan, tetapi juga dikenal efektif dalam memperbaiki kontrol glikemik pada pasien Diabetes Mellitus Tipe 2 (DMT2). Proyek ini bertujuan untuk mengidentifikasi profil ekspresi gen yang berubah secara signifikan (_Differentially Expressed Genes_) serta memetakan perubahan jalur metabolisme dan pensinyalan seluler pasca-prosedur.
+# 1. Introduction
+Roux-en-Y Gastric Bypass (RYGB) surgery is recognized not only as an effective intervention for weight loss but also for its ability to induce glycemic remission in patients with Type 2 Diabetes Mellitus (T2DM). This project aims to identify Differentially Expressed Genes (DEGs) and characterize associated changes in metabolic and cellular signaling pathways following the procedure.
 
-# 2. Metode
-Analisis ini menggunakan dataset publik GSE281144 yang diperoleh dari database NCBI _Gene Expression Omnibus_ (GEO), menggunakan platform _Affymetrix Human Transcriptome Array_ 2.0.
+# 2. Methods
+This analysis is based on the publicly available dataset GSE281144 from the NCBI Gene Expression Omnibus (GEO), generated using the Affymetrix Human Transcriptome Array 2.0 platform.
 
-Analisis dilakukan secara sistematis menggunakan bahasa pemrograman R dengan tahapan utama:
-### 2.1. _Preprocessing data_ 
-Normalisasi data microarray dan transformasi Log2.
+The analysis was performed systematically in R with the following main stages:
+### 2.1. Data Preprocessing 
+Microarray data normalization and Log2 transformation.
 
 ```R
 # Data Acquisition and Normalization
@@ -18,8 +18,8 @@ ex[ex <= 0] <- NA
 ex <- log2(ex) # Log2 transformation for normal distribution
 ```
 
-### 2.2. _Differential Analysis_
-Identifikasi DEG menggunakan model linier (`limma`) dengan kriteria Adjusted P-Value < 0.05 untuk membandingkan kelompok Post-Op terhadap Pre-Op.
+### 2.2. Differential Analysis
+DEGs were identified using linear models (`limma`) with an Adjusted P-Value < 0.05 to compare the Post-Op group against the Pre-Op group.
 
 ```R
 # Statistical Modeling with limma
@@ -33,16 +33,16 @@ fit2 <- eBayes(fit2) # Empirical Bayes moderation
 topTableResults <- topTable(fit2, adjust = "fdr", number = Inf, p.value = 0.05)
 ```
 
-### 2.3. Genes Annotation
-Pemetaan Probe ID ke Gene Symbol menggunakan simbol gen resmi yang disertakan langsung oleh GEO
+### 2.3. Gene Annotation
+Probe IDs were mapped to gene symbols using annotation data provided by GEO.
 
 ```R
-# Mengambil metadata fitur (gen) langsung dari objek gset
+# Extract feature metadata (genes) from the gset object
 feature_data <- fData(gset)
 extracted_symbols <- sub("^[^//]* // ([^//]*) // .*$", "\\1", feature_data$gene_assignment)
 extracted_names <- sub("^[^//]* // [^//]* // ([^//]*) // .*$", "\\1", feature_data$gene_assignment)
 
-# Mapping probe
+# Construct annotation map
 anno_map <- data.frame(
   PROBEID = feature_data$ID,
   SYMBOL = extracted_symbols,
@@ -50,16 +50,17 @@ anno_map <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Gabungkan ke hasil statistik topTable
+# Merge annotation with statistical results
 topTableResults <- merge(topTableResults, anno_map, by = "PROBEID", all.x = TRUE)
 topTableResults$SYMBOL[topTableResults$SYMBOL == "---"] <- NA
 topTableResults$GENENAME[topTableResults$GENENAME == "---"] <- NA
 head(topTableResults[, c("PROBEID", "SYMBOL", "GENENAME")])
 ```
 
-### 2.4. _Data Visualization (Volcano Plot & Heatmap)_
-Visualisasi dilakukan untuk memvalidasi distribusi gen secara global dan melihat pola pengelompokan ekspresi gen antar kondisi klinis (Pre-Op vs Post-Op).
-**1. _Volcano Plot_**
+### 2.4. Data Visualization (Volcano Plot & Heatmap)
+Visualization was performed to assess global gene expression distributions and to examine clustering patterns between clinical conditions (Pre-Op vs. Post-Op).
+
+**1. Volcano Plot**
 ```R
 # Data Preparation (Dataset GSE281144)
 volcano_data <- data.frame(
@@ -68,33 +69,33 @@ volcano_data <- data.frame(
   Gene = topTableResults$SYMBOL
 )
 
-# Klasifikasi Status Ekspresi (Threshold: |logFC| > 1 & adj.P.Val < 0.05)
+# Classify gene expression status (Threshold: |logFC| > 1 & adj.P.Val < 0.05)
 volcano_data$status <- "NO"
 volcano_data$status[volcano_data$logFC > 1 & volcano_data$adj.P.Val < 0.05] <- "UP"
 volcano_data$status[volcano_data$logFC < -1 & volcano_data$adj.P.Val < 0.05] <- "DOWN"
 
-# Visualisasi menggunakan ggplot2
+# Generate volcano plot
 ggplot(volcano_data, aes(x = logFC, y = -log10(adj.P.Val), color = status)) +
   geom_point(alpha = 0.4) +
   scale_color_manual(values = c("DOWN" = "blue", "NO" = "grey", "UP" = "red")) +
   geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
-  geom_hline(yintercept = -log10(0.01), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
   theme_minimal() +
-  labs(title = "Differential Gene Expression: Post-Op vs Pre-Op", 
+  labs(title = "Differential Gene Expression: Post-Op vs. Pre-Op", 
        subtitle = "Dataset GSE281144 - Gastric Bypass Adaptation")
 ```
-**2. _Heatmap (Top 50 DEGs)_**
+**2. Heatmap (Top 50 DEGs)**
 ```R
-# Seleksi 50 gen paling signifikan (Top 50 DEGs)
+# Select top 50 DEGs
 topTableAnnotated <- subset(topTableResults, !is.na(SYMBOL) & SYMBOL != "" & SYMBOL != "---")
 topTableAnnotated <- topTableAnnotated[order(topTableAnnotated$adj.P.Val), ]
 top50 <- head(topTableAnnotated, 50)
 
-# Matriks ekspresi dengan label Gene Symbol
+# Construct expression matrix
 mat_heatmap <- ex[top50$PROBEID, ]
 rownames(mat_heatmap) <- top50$SYMBOL
 
-# Visualisasi Heatmap dengan Klastering Hierarkis
+# Generate heatmap
 pheatmap(
   mat_heatmap,
   scale = "row",                
@@ -103,12 +104,12 @@ pheatmap(
   show_rownames = TRUE,
   fontsize_row = 7,
   clustering_method = "complete",
-  main = "Heatmap: Top 50 Identified Genes (Diabetic Post-Op vs Pre-Op)"
+  main = "Heatmap: Top 50 Identified Genes (Diabetic Post-Op vs. Pre-Op)"
 )
 ```
 
-### 2.5. _Enrichment Analysis_ 
-Interpretasi biologis menggunakan database _Gene Ontology_ (GO) dan _Kyoto Encyclopedia of Genes and Genomes_ (KEGG) untuk memetakan perubahan jalur fungsional.
+### 2.5. Enrichment Analysis 
+Biological interpretation was performed using the Gene Ontology (GO) and Kyoto Encyclopedia of Genes and Genomes (KEGG) databases to identify enriched functional pathways.
 
 ```R
 # GO Enrichment (Biological Process)
@@ -120,50 +121,50 @@ kegg_enrich <- enrichKEGG(gene = all_entrez_df$ENTREZID, organism = 'hsa')
 pathview(gene.data = kegg_logFC, pathway.id = "hsa04151", species = "hsa")
 ```
 
-Skrip R lengkap yang digunakan untuk analisis ini (termasuk pemrosesan `limma`, visualisasi `ggplot2`, dan pengayaan `clusterProfiler`) tersedia di folder utama repositori ini (file `Coding GSE281144.R`)
+The full R script used in this analysis is available in the main directory of this repository (file `Coding GSE281144.R`)
 
-# 3. Hasil dan Pembahasan
-### 3.1. Visualisasi Ekspresi Gen (DEG)
+# 3. Results and Discussion
+### 3.1. Gene Expression Visualization (DEG)
 
-Analisis menunjukkan pergeseran transkriptomik yang masif pasca-operasi, ditandai dengan pemisahan klaster yang jelas antara pasien sebelum dan sesudah operasi.
+The analysis revealed distinct transcriptomic differences between Pre-Op and Post-Op samples, with clear clustering patterns across conditions.
 
 ![Volcano_Plot.png](plot-result/Volcano_Plot.png)
 
-Gambar 1. Volcano plot menampilkan distribusi signifikansi gen. Titik merah (Up-regulated) dan biru (Down-regulated) menunjukkan gen dengan perubahan ekspresi secara signifikan (FDR < 0.05).
+Figure 1. Volcano plot displaying DEGs based on significance (FDR < 0.05), with red (up-regulated) and blue (down-regulated) dots.
 
 ![Heatmap_TOP50_DEGs.png](plot-result/Heatmap_TOP50_DEGs.png)
 
-Gambar 2. Heatmap 50 DEG teratas menunjukkan pola ekspresi yang konsisten secara sistemik pada kelompok Post-Op dibandingkan Pre-Op.
+Figure 2. Heatmap of the top 50 DEGs showing distinct expression patterns with clear separation between Pre-Op and Post-Op groups.
 
-### 3.2. Analisis Fungsional dan Jalur (GO & KEGG)
+### 3.2. Functional and Pathway Analysis (GO & KEGG)
 
 ![GO_UpRegulated.Genes.png](plot-result/GO_UpRegulated.Genes.png)
 ![GO_DownRegulated.Genes.png](plot-result/GO_DownRegulated.Genes.png)
 
-Gambar 3. Analisis _Gene Ontology_ (GO) mengindikasikan bahwa gen-gen yang terekspresi diferensial terlibat dalam proses imunologis serta regulasi homeostasis metabolik.
+Figure 3. Gene Ontology (GO) analysis suggests that the DEGs are involved in immune-related processes and metabolic regulation.
 
 ![KEGG_Pathway.png](plot-result/KEGG_Pathway.png)
 
-Gambar 4. Analisis _Kyoto Encyclopedia of Genes and Genomes_ (KEGG) mengidentifikasi 18 jalur yang signifikan secara statistik (adj.P.Val < 0.05).
+Figure 4. KEGG analysis identified 18 statistically significant pathways (adj.P.Val < 0.05).
 
-Terdapat tiga jalur kunci yang menjelaskan perbaikan klinis pada pasien DMT2:
-1. Modulasi glukoneogenesis (_PI3K-Akt signaling_)
+Among these, three key pathways explain the clinical improvement in T2DM patients:
+1. Gluconeogenesis Modulation (PI3K-Akt signaling)
 
 ![hsa04151.pathview.png](plot-result/hsa04151.pathview.png)
 
-Gambar 5. _PI3K-Akt signaling_ (hsa04151): ditemukan penurunan signifikan pada gen PEPCK (_Phosphoenolpyruvate carboxykinase_), yang menyebabkan terjadinya penekanan proses glukoneogenesis di hati
+Figure 5. PI3K-Akt signaling (hsa04151): Downregulation of PEPCK may reflect decreased gluconeogenic signaling in the liver.
 
-2. Reprogramming metabolisme lipid (_PPAR signaling_)
+2. Lipid Metabolism Reprogramming (PPAR signaling)
 
 ![hsa03320.pathview.png](plot-result/hsa03320.pathview.png)
 
-Gambar 6. _PPAR signaling_ (hsa03320): penurunan ekspresi transporter lipid (_Apo-AI_ dan _PLTP_) dan _Perilipin_ menunjukkan adaptasi mobilisasi lemak tubuh.
+Figure 6. PPAR signaling (hsa03320): Downregulation of Apo-AI, PLTP, and Perilipin suggests changes in lipid transport and metabolic regulation.
 
-3. Adaptasi penyerapan nutrisi (_vitamin digestion and absorption_)
+3. Nutrient Absorption Adaptation (Vitamin digestion and absorption)
 
 ![hsa04977.pathview.png](plot-result/hsa04977.pathview.png)
 
-Gambar 7. _Vitamin digestion and absorption_ (hsa04977): penurunan ekspresi gen transporter mikronutrien (_PCFT_ dan _RFC_) memberikan bukti molekuler terkait risiko malabsorpsi folat pasca-bypass.
+Figure 7. Vitamin digestion and absorption (hsa04977): Downregulation of PCFT and RFC may indicate altered folate absorption-related processes after gastric bypass surgery.
 
-# 4. Kesimpulan
-Efektivitas operasi RYGB dalam mengatasi diabetes melibatkan mekanisme multi-jalur. Selain restrukturisasi respon imun, operasi ini secara spesifik menekan jalur glukoneogenesis dan mengubah dinamika transportasi nutrisi. Temuan ini menegaskan pentingnya manajemen nutrisi jangka panjang bagi pasien pasca-operasi untuk mengantisipasi defisiensi vitamin.
+# 4. Conclusion
+RYGB-induced transcriptomic changes suggest involvement of multiple pathways, including immune processes, gluconeogenesis, and nutrient transport. These findings emphasize the importance of post-operative nutritional monitoring.
