@@ -138,8 +138,7 @@ Figure 2. Heatmap of the top 50 DEGs showing distinct expression patterns with c
 
 ### 3.2. Functional and Pathway Analysis (GO & KEGG)
 
-![GO_UpRegulated.Genes.png](plot-result/GO_UpRegulated.Genes.png)
-![GO_DownRegulated.Genes.png](plot-result/GO_DownRegulated.Genes.png)
+![GO_Enrichment.png](plot-result/GO_Enrichment.png)
 
 Figure 3. Gene Ontology (GO) analysis suggests that the DEGs are involved in immune-related processes and metabolic regulation.
 
