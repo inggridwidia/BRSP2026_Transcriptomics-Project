@@ -1,26 +1,25 @@
-# PROJECT: Analisis Ekspresi Gen Adaptasi Usus Pasca Gastric Bypass Pada Pasien Diabetes Tipe 2
+# PROJECT: Gene Expression Analysis of Intestinal Adaptation Following Gastric Bypass in Type 2 Diabetes Patients
 # DATASET: GSE281144 
 # PLATFORM: Microarray (Affymetrix Human Transcriptome Array 2.0)
-# DESCRIPTION: Analisis Diferensial Ekspresi Gen (DEG) untuk membandingkan 
-# kondisi Pre-Op vs Post-Op (Gabungan 1 & 6 bulan) menggunakan R/Bioconductor.
+# DESCRIPTION: Differential Expression Genes (DEGs) analysis comparing 
+# Pre-Op vs Post-Op conditions using R/Bioconductor.
 
 
 # ------------------------------------------------------------------------------
-# PART A. PERSIAPAN LINGKUNGAN (ENVIRONMENT SETUP)
-# Sebelum analisis dimulai, kita harus memastikan semua 'library' khusus 
-# bioinformatika tersedia dengan menggunakan BiocManager untuk mengelola paket.
+# PART A. ENVIRONMENT SETUP
+# Ensure required bioinformatics libraries are installed and available
 # ------------------------------------------------------------------------------
 
-# Memastikan BiocManager terinstal untuk akses ke repository Bioconductor 
+# Install BiocManager to access the Bioconductor repository 
 if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 
-# GEOquery: Digunakan untuk parsing data dari NCBI Gene Expression Omnibus
-# limma: Menggunakan model linear untuk identifikasi ekspresi gen diferensial 
+# Install core packages (GEOquery for data retrieval, limma for differential expression analysis) 
 BiocManager::install(c("GEOquery", "limma"), ask = FALSE, update = FALSE)
 
-# Paket visualisasi untuk membuat plot yang estetis (ggplot2, pheatmap) 
+# Install CRAN packages for visualization, data manipulation, and dimensionality reduction 
 install.packages(c("pheatmap", "ggplot2", "dplyr", "umap"))
 
+# Load required libraries
 library(GEOquery)
 library(limma)
 library(pheatmap)
@@ -32,77 +31,74 @@ library(umap)
 
 
 # ------------------------------------------------------------------------------
-# PART B. IMPORT DATA DARI DATABASE GEO
-# Langkah ini mengambil 'ExpressionSet' yang berisi data mentah dan metadata.
+# PART B. DATA ACQUISITION FROM GEO
+# This step retrieves the 'ExpressionSet' containing both raw data and metadata.
 # ------------------------------------------------------------------------------
 
-# getGEO mendownload data langsung menggunakan ID GSE281144
+# Download dataset directly using the GSE281144 accession ID
 gset <- getGEO("GSE281144", GSEMatrix = TRUE, AnnotGPL = TRUE)[[1]]
 
-#ExpressionSet berisi:
-# - exprs() : matriks ekspresi gen
-# - pData() : metadata sampel
-# - fData() : metadata fitur (probe / gen)
+# ExpressionSet components:
+# - exprs() : Gene expression matrix
+# - pData() : Sample metadata
+# - fData() : Feature metadata (probes / genes)
 
 
 
 # ------------------------------------------------------------------------------
-# PART C. DATA PRE-PROCESSING & NORMALISASI
-# Data microarray mentah seringkali memiliki varians yang tidak stabil.
-# Kita melakukan transformasi log2 untuk menormalisasi distribusi data.
+# PART C. DATA PRE-PROCESSING & NORMALIZATION
+# Raw microarray data often exhibits heteroscedasticity.
+# Log2 transformation is performed to normalize the data distribution.
 # ------------------------------------------------------------------------------
 
-# exprs(): mengambil matriks ekspresi gen
-# Baris  = probe/gen
-# Kolom  = sampel
+# exprs(): Extract gene expression matrix
+# Rows    = Probes/Genes
+# Columns = Samples
 ex <- exprs(gset) 
 
-# Cek apakah data sudah dalam skala log atau masih linear
+# Determine if the dataset requires Log transformation
 qx <- as.numeric(quantile(ex, c(0, 0.25, 0.5, 0.75, 0.99, 1), na.rm = TRUE))
 LogTransform <- (qx[5] > 100) || (qx[6] - qx[1] > 50 && qx[2] > 0)
 
 #IF statement:
-#Jika LogTransform = TRUE, maka lakukan log2
-#Nilai <= 0 tidak boleh di-log, maka diubah menjadi NA
+# If LogTransform = TRUE, apply log2 transformation.
+# Values <= 0 are replaced with NA to avoid undefined log results.
 if (LogTransform) {
-  ex[ex <= 0] <- NA # Menghindari nilai negatif/nol sebelum log
-  ex <- log2(ex)    # Transformasi log2 agar distribusi data lebih 'normal'
+  ex[ex <= 0] <- NA 
+  ex <- log2(ex)    
 }
 
 
 
 # ------------------------------------------------------------------------------
-# PART D. PENYARINGAN DATA & DEFINISI KELOMPOK (SUBSETTING)
-# Pada bagian ini, kita melakukan subsetting untuk hanya mengambil pasien 
-# dengan status 'Diabetic' dan membandingkan kondisi sebelum vs sesudah operasi.
+# PART D. DATA FILTERING & GROUP DEFINITION (SUBSETTING)
+# Subset dataset to retain diabetic samples only
+# Define Pre-Op vs Post-Op conditions for comparison
 # ------------------------------------------------------------------------------
 
-#Dari ExpressionSet, perlu tahu mana kolom spesifik mana yang berisikan info biologis
+# Identify the specific metadata column containing biological information
 View(pData(gset))
 
-# Identifikasi baris yang memiliki status 'diabetic'
-# Kita mencari kata 'diabetic' pada kolom characteristics_ch1.1
+# Identify samples with diabetic status in metadata (characteristics_ch1.1)
 is_diabetic <- grepl("diabetic", pData(gset)$characteristics_ch1.1, ignore.case = TRUE)
 
-# Filter Objek gset (hanya mengambil kolom sampel diabetes)
-# Pastikan untuk update objek 'gset' yang hanya berisi sampel pasien diabetes
-# Pastikan juga update matriks ekspresi 'ex' agar hanya berisi sampel diabetes yang sudah difilter
+# Filter the gset object to include only diabetic samples
+# Update 'gset' and the expression matrix 'ex' with the filtered diabetic samples
 gset <- gset[, is_diabetic]
 ex <- exprs(gset)
 
-# Mengambil informasi waktu (Pre-Op vs Post-Op) dari kolom 'title'
-# baseline = Pre-Op, sisanya (1 month/6 month) = Post-Op
+# Extract time-point information (Pre-Op vs. Post-Op) from sample titles
+# baseline = Pre-Op, other time points (1 month/6 months) = Post-Op
 titles <- pData(gset)$title
 group_info <- ifelse(grepl("baseline", titles, ignore.case = TRUE), "PreOp_DM", "PostOp_DM")
 
-# Membersihkan format teks menjadi faktor agar dikenali oleh model statistik R
+# Standardize group names and convert into factors for statistical modeling
 groups <- make.names(group_info)
 gset$group <- factor(groups)
 nama_grup <- levels(gset$group)
 
-# Kontras: Membandingkan efek SETELAH operasi terhadap SEBELUM operasi
-# Post-Op (Treatment) vs Pre-Op (Control)
-# Menentukan urutan yang akan dibandingkan 
+# Define contrast: Post-Op (Treatment) vs. Pre-Op (Control) comparison
+# Verify group ordering for contrast definition
 print(nama_grup)
 
 grup_post <- nama_grup[1] 
@@ -111,28 +107,27 @@ grup_pre  <- nama_grup[2]
 
 
 # ------------------------------------------------------------------------------
-# PART E. ANALISIS STATISTIK DIFFERENTIAL EXPRESSION (LIMMA)
-# Menggunakan Linear Models for Microarray (limma) untuk menemukan gen yang 
-# berubah secara signifikan di antara kedua kelompok.
+# PART E. DIFFERENTIAL EXPRESSION STATISTICAL ANALYSIS (LIMMA)
+# Using Linear Models (limma) to identify genes 
+# significant expression changes between groups
 # ------------------------------------------------------------------------------
 
-# Membuat Matriks Desain: Merepresentasikan struktur eksperimen secara matematis
+# Construct design matrix representing the experimental group structure
 design <- model.matrix(~0 + gset$group)
 colnames(design) <- levels(gset$group)
 
-# Fit Model: Menghitung rata-rata ekspresi tiap gen pada setiap grup 
+# Fit linear model to estimate expression differences across groups
 fit <- lmFit(ex, design)
 
-# Create Contrast: Mendefinisikan perbandingan spesifik (Post-Op minus Pre-Op)
+# Create Contrast: Define the specific comparison (Post-Op minus Pre-Op)
 contrast_formula <- paste(grup_post, "-", grup_pre, sep = "")
 contrast_matrix <- makeContrasts(contrasts = contrast_formula, levels = design)
 
-# eBayes: Langkah krusial untuk menstabilkan estimasi varians gen menggunakan 
-# metode statistik Bayesian, sehingga hasil lebih akurat meski jumlah sampel terbatas
+# Apply empirical Bayes (eBayes) moderation to stabilize variance estimates
 fit2 <- contrasts.fit(fit, contrast_matrix)
 fit2 <- eBayes(fit2)
 
-# Mengambil tabel hasil akhir (Top Table) dengan koreksi FDR (False Discovery Rate) 
+# Extract differentially expressed genes with FDR-adjusted significance
 topTableResults <- topTable(
   fit2,
   adjust = "fdr",
@@ -145,31 +140,26 @@ head(topTableResults)
 
 
 # ------------------------------------------------------------------------------
-# PART F. ANOTASI BIOLOGIS (GENE MAPPING)
-# Data awal berupa ID Probe (kode teknis chip). Kita mapping ke Symbol Gen resmi.
-# Karena kendala versi pada library '.db' spesifik, kita menggunakan data anotasi 
-# yang disertakan langsung oleh GEO (fData).
+# PART F. BIOLOGICAL ANNOTATION (GENE MAPPING)
+# Map probe IDs to gene symbols and gene names for biological interpretation.
+# Use feature metadata from GEO (fData) for gene annotation.
 # ------------------------------------------------------------------------------
 
-# Mengambil metadata fitur (gen) langsung dari objek gset
+# Retrieve feature metadata (gene info) directly from the gset object
 feature_data <- fData(gset)
 
-# Mapping menggunakan data dari GEO 
-# Cek informasi biologis (simbol gen) ternyata disimpan di dalam kolom bernama apa?
+# Verify the metadata column containing biological information (Gene Symbols)
 colnames(fData(gset))
 
-# Simbol gen ternyata tersimpan di dalam kolom bernama 'gene_assignment'
-# Kolom 'gene_assignment' ini biasanya berisi teks panjang 
-# Menggabungkan Accession Number, Simbol Gen, dan Deskripsi. 
-# Kita perlu sedikit melakukan "pembedahan" teks 
-
-# Mengambil SYMBOL (biasanya di bagian kedua setelah //)
+# Extract gene information from 'gene_assignment' field
+# Format contains accession, gene symbol, and gene description 
+# Extract gene symbols (second field in annotation string)
 extracted_symbols <- sub("^[^//]* // ([^//]*) // .*$", "\\1", feature_data$gene_assignment)
 
-# Mengambil GENE NAME (biasanya di bagian ketiga setelah //)
+# Extract gene names (third field in annotation string)
 extracted_names <- sub("^[^//]* // [^//]* // ([^//]*) // .*$", "\\1", feature_data$gene_assignment)
 
-# Mapping probe -> gene symbol & gene name
+# Construct annotation mapping (Probe -> Symbol & Name)
 anno_map <- data.frame(
   PROBEID = feature_data$ID,
   SYMBOL = extracted_symbols,
@@ -177,27 +167,30 @@ anno_map <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Gabungkan ke hasil statistik topTable
-topTableResults <- merge(topTableResults, anno_map, by = "PROBEID", all.x = TRUE)
+# Merge differential expression results with gene annotation
+topTableResults <- merge(topTableResults, anno_map, 
+                         by.x = "row.names", 
+                         by.y = "PROBEID", 
+                         all.x = TRUE)
+colnames(topTableResults)[1] <- "PROBEID"
 
-# Pembersihan: Jika tidak ada nama gen (ditandai "---"), ubah jadi NA
+# Clean missing annotation values
 topTableResults$SYMBOL[topTableResults$SYMBOL == "---"] <- NA
 topTableResults$GENENAME[topTableResults$GENENAME == "---"] <- NA
 
-# Cek hasil anotasi
+# Preview annotated results
 head(topTableResults[, c("PROBEID", "SYMBOL", "GENENAME")])
 
 
 
 # ------------------------------------------------------------------------------
-# PART G. QUALITY CONTROL & EKSPLORASI DATA (VISUALISASI AWAL)
-# Sebelum masuk ke hasil akhir, kita perlu memastikan kualitas data dan 
-# melihat bagaimana sampel terpisah secara alami.
+# PART G. QUALITY CONTROL & DATA EXPLORATION (INITIAL VISUALIZATION)
+# Verify data quality and assess sample clustering patterns prior to downstream analysis
 # ------------------------------------------------------------------------------
 
-# 1. BOXPLOT: Mengecek distribusi nilai ekspresi antar sampel
-# Penting untuk memastikan tidak ada sampel yang memiliki rentang nilai yang sangat berbeda (batch effect).
-# Set warna berdasarkan grup
+# 1. BOXPLOT: Assess expression distribution across samples
+# Identify potential outliers and batch effects
+# Assign colors based on sample groups
 group_colors <- as.numeric(gset$group) 
 
 boxplot(
@@ -205,7 +198,7 @@ boxplot(
   col = group_colors,
   las = 2,
   outline = FALSE,
-  main = "Distribusi Nilai Ekspresi: Post-Op vs Pre-Op",
+  main = "Expression Value Distribution: Post-Op vs. Pre-Op",
   ylab = "Expression Value (log2)"
 )
 
@@ -216,9 +209,9 @@ legend(
   cex = 0.7
 )
 
-# 2. DENSITY PLOT: Melihat sebaran global nilai ekspresi
-# Plot ini memastikan bahwa proses normalisasi log2 telah berhasil menyamakan distribusi antar grup.
-# Gabungkan ekspresi & grup ke data frame
+# 2. DENSITY PLOT: Visualize overall expression distribution across samples
+# Confirm that log2 normalization effectively aligned the distributions across groups.
+# Reshape expression data and group info into a long-format data frame
 expr_long <- data.frame(
   Expression = as.vector(ex),
   Group = rep(gset$group, each = nrow(ex))
@@ -228,30 +221,27 @@ ggplot(expr_long, aes(x = Expression, color = Group)) +
   geom_density(linewidth = 1) +
   theme_minimal() +
   labs(
-    title = "Kerapatan Distribusi (Density Plot)",
+    title = "Global Expression Density Plot",
     x = "Log2 Expression",
     y = "Density"
   )
 
-# 3. UMAP: Visualisasi Dimensi Rendah
-# UMAP membantu kita melihat apakah sampel Pre-Op dan Post-Op mengelompok (cluster) 
-# berdasarkan kemiripan ekspresi gen global mereka.
-
-# Transpose matriks ekspresi:
-# UMAP bekerja dengan menghitung kemiripan antar sampel (baris)
+# 3. UMAP: Low-Dimensional Visualization
+# Evaluate sample clustering based on global gene expression patterns
+# Transpose expression matrix for sample-level analysis
 umap_input <- t(ex) 
 
-# Jalankan UMAP
+# Perform UMAP dimensionality reduction
 umap_result <- umap(umap_input)
 
-# Simpan hasil ke data frame
+# Store coordinates in a data frame
 umap_df <- data.frame(
   UMAP1 = umap_result$layout[, 1],
   UMAP2 = umap_result$layout[, 2],
   Group = gset$group
 )
 
-#Plot UMAP
+# Generate UMAP visualization
 ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = Group)) +
   geom_point(size = 3, alpha = 0.8) +
   theme_minimal() +
@@ -264,56 +254,56 @@ ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = Group)) +
 
 
 # ------------------------------------------------------------------------------
-# PART H. VISUALISASI DATA (INTERPRETASI HASIL)
+# PART H. DATA VISUALIZATION (RESULTS OVERVIEW)
 # ------------------------------------------------------------------------------
 
-# 1. VOLCANO PLOT: Memberikan gambaran global perubahan gen (Log Fold Change vs Signifikansi) 
+# 1. VOLCANO PLOT: Visualize global differential expression patterns (Log Fold Change vs. Significance) 
 volcano_data <- data.frame(
   logFC = topTableResults$logFC,
   adj.P.Val = topTableResults$adj.P.Val,
   Gene = topTableResults$SYMBOL
 )
 
-#Klasifikasi status gen
+# Classify gene status based on differential expression thresholds
 volcano_data$status <- "NO"
 volcano_data$status[volcano_data$logFC > 1 & volcano_data$adj.P.Val < 0.05] <- "UP"
 volcano_data$status[volcano_data$logFC < -1 & volcano_data$adj.P.Val < 0.05] <- "DOWN"
 
-#Visualisasi
+# Generate volcano plot visualization
 ggplot(volcano_data, aes(x = logFC, y = -log10(adj.P.Val), color = status)) +
   geom_point(alpha = 0.4) +
   scale_color_manual(values = c("DOWN" = "blue", "NO" = "grey", "UP" = "red")) +
   geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
-  geom_hline(yintercept = -log10(0.01), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
   theme_minimal() +
   labs(title = "Differential Gene Expression: Post-Op vs Pre-Op", 
        subtitle = "Dataset GSE281144 - Gastric Bypass Adaptation")
 
-# 2. HEATMAP: Melihat pola ekspresi 50 gen paling signifikan di setiap sampel (Top 50 DEGs)
-# Pilih 50 gen paling signifikan berdasarkan adj.P.Val
-# Kita hanya ambil baris yang SYMBOL-nya tidak NA dan bukan "---"
+# 2. HEATMAP: Visualize expression patterns of the top 50 differentially expressed genes
+# Select top 50 genes ranked by adjusted p-value
+# Remove invalid gene annotations (NA or placeholder values)
 topTableAnnotated <- subset(topTableResults, !is.na(SYMBOL) & SYMBOL != "" & SYMBOL != "---")
 topTableAnnotated <- topTableAnnotated[order(topTableAnnotated$adj.P.Val), ]
 top50 <- head(topTableAnnotated, 50)
 
-# Ambil matriks ekspresi untuk gen terpilih menggunakan PROBEID
+# Extract expression matrix for the selected genes using PROBEID
 mat_heatmap <- ex[top50$PROBEID, ]
 
-# Karena sudah kita filter, kita langsung pakai SYMBOL sebagai label (tanpa fallback)
+# Assign gene symbols as row names
 gene_label <- top50$SYMBOL
 rownames(mat_heatmap) <- gene_label
 
-# Membersihkan data dari NA atau varians nol agar heatmap tidak error
+# Remove missing values and zero-variance genes to ensure valid clustering
 mat_heatmap <- mat_heatmap[rowSums(is.na(mat_heatmap)) == 0, ]
 mat_heatmap <- mat_heatmap[apply(mat_heatmap, 1, var) > 0, ]
 
-# Anotasi kolom (kelompok sampel)
+# Define column annotations (sample groups)
 annotation_col <- data.frame(
   Group = gset$group
 )
 rownames(annotation_col) <- colnames(mat_heatmap)
 
-# Visualisasi heatmap 
+# Generate clustered heatmap
 pheatmap(
   mat_heatmap,
   scale = "row",                
@@ -330,168 +320,97 @@ pheatmap(
 
 
 # ------------------------------------------------------------------------------
-# PART I. EXPORT DATA HASIL AKHIR
-# Menyimpan tabel hasil analisis ke format CSV untuk pelaporan lebih lanjut.
+# PART I. FINAL DATA EXPORT
+# Save the analysis results to CSV format for further reporting.
 # ------------------------------------------------------------------------------
-# Mengambil daftar simbol gen yang signifikan (misal p-adj < 0.05)
-# untuk dimasukkan ke analisis GO/KEGG online
+# Extract significant genes for downstream GO/KEGG analysis
 sig_genes <- subset(topTableAnnotated, adj.P.Val < 0.05)$SYMBOL
 
-# Simpan ke file teks agar mudah di-copy paste
+# Export gene list as text file
 write.table(sig_genes, "daftar_gen_signifikan.txt", row.names = FALSE, col.names = FALSE, quote = FALSE)
 
+# Save full DEG results table as CSV
 write.csv(topTableResults, "GSE281144_DEG_Results.csv")
-message("Analisis selesai. File CSV telah siap digunakan!")
+message("Analysis complete: results exported successfully")
 
 
 
 # ------------------------------------------------------------------------------
-# PART J. ANALISIS GO 
-# Analisis Gene Ontology difokuskan pada Biological Process (BP)
-# Alasan: BP memberikan gambaran langsung mengenai perubahan jalur fungsional 
-# dan proses sistemik yang terjadi pada pasien diabetes pasca-gastric bypass.
+# PART J. GENE ONTOLOGY (GO) ENRICHMENT ANALYSIS
+# Focus on Gene Ontology Biological Processes (BP)
+# BP analysis provides insight into functional alterations associated with Post-Op conditions
 # ------------------------------------------------------------------------------
 
-# Load library (pastikan sudah terinstal)
-# Install jika belum ada
+# Install required Bioconductor packages for GO enrichment analysis
 BiocManager::install(c("clusterProfiler", "org.Hs.eg.db", "enrichplot"), update = FALSE)
 n
 
+# Load libraries for enrichment analysis and visualization
 library(clusterProfiler)
-library(org.Hs.eg.db) # Database untuk gen manusia
+library(org.Hs.eg.db) # Human genome annotation database (Homo sapiens)
 library(enrichplot)
 library(ggplot2)
 
-# Mengambil gen yang signifikan dan memiliki SYMBOL
+# Filter significant genes with annotated gene symbols
 sig_genes_df <- subset(topTableResults, adj.P.Val < 0.05 & !is.na(SYMBOL) & SYMBOL != "" & SYMBOL != "---")
 
-# Memisahkan gen yang NAIK (Up-regulated) dan TURUN (Down-regulated)
-# Ini penting karena jalur biologisnya bisa sangat berbeda
-up_genes <- sig_genes_df$SYMBOL[sig_genes_df$logFC > 1]
-down_genes <- sig_genes_df$SYMBOL[sig_genes_df$logFC < -1]
-
-# Cek jumlah gen
-cat("Jumlah gen Up:", length(up_genes), "\n")
-cat("Jumlah gen Down:", length(down_genes), "\n")
-write.table(sig_genes_df$SYMBOL, "gen_list.txt", row.names=F, col.names=F, quote=F)
-
-
-# 1. Analisis GO (Biological Process) untuk Up-Regulated Genes
-# Menjalankan Analisis Enrichment GO (Biological Process)
-# Kita gunakan OrgDb "org.Hs.eg.db" karena ini data manusia (Homo sapiens)
-# Karena jumlah gen yang NAIK hanya sedikit, ambil gen signifikan tanpa filter logFC yang ketat
-up_genes_more <- sig_genes_df$SYMBOL[sig_genes_df$logFC > 0.1]
-
-# Konversi Symbol ke Entrez ID untuk Gen yang NAIK (Up)
-up_entrez <- bitr(
-  up_genes_more, 
-  fromType="SYMBOL", 
-  toType="ENTREZID", 
-  OrgDb=org.Hs.eg.db
-)
-cat("Jumlah gen Up terkonversi:", nrow(up_entrez), "\n")
-
-# Jalankan GO dengan p-value yang lebih ramah (0.1)
-go_up <- enrichGO(
-  gene          = up_entrez_more$ENTREZID,
-  OrgDb         = org.Hs.eg.db,
-  keyType       = "ENTREZID",
-  ont           = "BP", 
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.1,
-  qvalueCutoff  = 0.1,
-  readable      = TRUE
-)
-# Visualisasi dotplot untuk gen UP
-dotplot(go_up_final, showCategory = 10) + 
-  labs(title = "GO Enrichment: Up-Regulated Processes",
-       subtitle = "Processes activated after Gastric Bypass in Diabetic Patients",
-       x = "Gene Ratio",
-       y = "Biological Process"
-  )
-
-# 2. Analisis GO (Biological Process) untuk Down-Regulated Genes
-# Menjalankan Analisis Enrichment GO (Biological Process)
-# Kita gunakan OrgDb "org.Hs.eg.db" karena ini data manusia (Homo sapiens)
-# Konversi Symbol ke Entrez ID untuk Gen yang TURUN (Down)
-down_entrez <- bitr(
-  down_genes, 
+# Convert gene symbols to Entrez IDs
+# Ensure compatibility with GO and KEGG databases
+genes_entrez <- bitr(
+  sig_genes_df$SYMBOL, 
   fromType = "SYMBOL", 
-  toType = "ENTREZID", 
-  OrgDb = org.Hs.eg.db
+  toType   = "ENTREZID", 
+  OrgDb    = org.Hs.eg.db
 )
-cat("Jumlah gen Up terkonversi:", nrow(down_entrez), "\n")
+cat("Total unique genes included in GO analysis:", nrow(genes_entrez), "\n")
 
-# Jalankan GO untuk gen DOWN
-go_down <- enrichGO(
-  gene          = down_entrez$ENTREZID,
+# Perform GO enrichment analysis (Biological Process)
+# Identify enriched biological processes associated with the gene set
+go_results <- enrichGO(
+  gene          = genes_entrez$ENTREZID,
   OrgDb         = org.Hs.eg.db,
   keyType       = "ENTREZID",
   ont           = "BP", 
   pAdjustMethod = "BH",
   pvalueCutoff  = 0.05,
   qvalueCutoff  = 0.05,
-  readable      = TRUE
+  readable      = TRUE  # Convert IDs back to Symbols for plot readability
 )
 
-# Visualisasi Dotplot Down
-dotplot(go_down, showCategory = 10) + 
-  labs(title = "GO Enrichment: Down-Regulated Processes",
-       subtitle = "Biological functions suppressed after Gastric Bypass",
+# Generate dotplot visualization
+# Display top 10 enriched biological processes
+dotplot(go_results, showCategory = 10) + 
+  labs(title = "GO Enrichment: Biological Processes",
+       subtitle = "Overall functional changes after Gastric Bypass",
        x = "Gene Ratio",
-       y = "Biological Process"
-  )
-
-dotplot(go_up_final, showCategory = 10) + 
-  labs(title = "GO Enrichment: Up-Regulated Processes",
-       subtitle = "Processes activated after Gastric Bypass in Diabetic Patients",
-       x = "Gene Ratio",
-       y = "Biological Process"
-  )
+       y = "Biological Process")
 
 
 
 # ------------------------------------------------------------------------------
-# PART K. ANALISIS KEGG PATHWAY (GABUNGAN UP & DOWN REGULATED)
-# Tujuan: Melihat interaksi gen dalam peta jalur metabolisme yang utuh.
+# PART K. KEGG PATHWAY ANALYSIS
+# KEGG enrichment analysis to identify relevant metabolic and signaling pathways
 # ------------------------------------------------------------------------------
 
-# Menyiapkan Daftar Gen Gabungan (Up + Down)
-# Kita menggunakan semua gen yang signifikan (adj.P.Val < 0.05) 
-# agar mendapatkan gambaran sirkuit biologis yang lengkap.
-all_genes_symbol <- sig_genes_df$SYMBOL
-
-# Konversi SYMBOL ke ENTREZ ID
-# Database KEGG secara teknis hanya mengenali format ENTREZID (angka).
-all_entrez_df <- bitr(
-  all_genes_symbol, 
-  fromType = "SYMBOL", 
-  toType   = "ENTREZID", 
-  OrgDb    = org.Hs.eg.db
-)
-
-# Catatan: Cek jumlah gen yang berhasil terkonversi
-cat("Jumlah gen yang masuk ke analisis KEGG:", nrow(all_entrez_df), "\n")
-
-# Menjalankan Enrichment KEGG
-# 'hsa' adalah kode untuk Homo sapiens (manusia).
+# Perform KEGG enrichment analysis
+# Use previously generated Entrez ID list
 kegg_enrich <- enrichKEGG(
-  gene         = all_entrez_df$ENTREZID,
+  gene         = genes_entrez$ENTREZID,
   organism     = 'hsa', 
   pvalueCutoff = 0.05
 )
 
-# Melihat seluruh daftar hasil KEGG dalam bentuk tabel
+# Convert KEGG results to data frame
 kegg_table <- as.data.frame(kegg_enrich)
-View(kegg_table) # Akan membuka jendela baru berisi daftar lengkap
+View(kegg_table) # View results interactively (RStudio only)
 
-# Visualisasi Barplot KEGG
-# Menunjukkan jalur metabolisme mana yang paling banyak berubah (paling signifikan).
+# Generate KEGG enrichment barplot
+# Display top enriched pathways
 library(ggplot2)
 barplot(kegg_enrich, showCategory = 18) +
   scale_y_discrete(
     labels = function(x) paste0(kegg_enrich@result$ID[match(x, kegg_enrich@result$Description)], ": ", x)
-    ) +
+  ) +
   labs(
     title    = "KEGG Pathway Enrichment Analysis",
     subtitle = "All 18 significantly affected pathways (p.adj < 0.05)",
@@ -500,20 +419,17 @@ barplot(kegg_enrich, showCategory = 18) +
   ) +
   theme_minimal()
 
-# Visualisasi Spesifik: Pathview (Peta Berwarna Merah-Hijau)
-# Langkah ini akan menghasilkan file gambar .PNG di folder kerja R kamu.
-# Merah = Gen Naik (Up), Hijau = Gen Turun (Down).
-# Instal jika belum ada: 
+# Generate pathway visualization outputs (PNG format)
+# Red = Up-regulated, Green = Down-regulated.
+# Install and load pathview package if needed
 BiocManager::install("pathview")
 library(pathview)
 
-# Menyiapkan data logFC yang sudah dipasangkan dengan Entrez ID
-# Kita ambil logFC dari sig_genes_df dan beri nama sesuai Entrez ID-nya
+# Prepare logFC data indexed by Entrez IDs
 kegg_logFC <- sig_genes_df$logFC
-names(kegg_logFC) <- all_entrez_df$ENTREZID[match(sig_genes_df$SYMBOL, all_entrez_df$SYMBOL)]
+names(kegg_logFC) <- genes_entrez$ENTREZID[match(sig_genes_df$SYMBOL, genes_entrez$SYMBOL)]
 
-
-# Visualisasi Jalur "Vitamin Digestion and Absorption" (hsa04977)
+# Pathview: Vitamin digestion and absorption (hsa04977)
 pathview(
   gene.data  = kegg_logFC,
   pathway.id = "hsa04977", 
@@ -521,7 +437,7 @@ pathview(
   limit      = list(gene = 2, cpd = 1)
 )
 
-# Visualisasi Jalur "PI3K-Akt signaling" (hsa04151)
+# Pathview: PI3K-Akt signaling (hsa04151)
 pathview(
   gene.data  = kegg_logFC,
   pathway.id = "hsa04151", 
@@ -529,13 +445,10 @@ pathview(
   limit      = list(gene = 2, cpd = 1)
 )
 
-# Visualisasi Jalur "PPAR signaling" (hsa03320)
+# Pathview: PPAR signaling (hsa03320)
 pathview(
   gene.data  = kegg_logFC,
   pathway.id = "hsa03320", 
   species    = "hsa",
   limit      = list(gene = 2, cpd = 1)
 )
-
-
-
